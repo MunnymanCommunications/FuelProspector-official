@@ -1,0 +1,7 @@
+{
+  "name": "FuelProspector AI",
+  "description": "An AI-powered sales prospecting tool for finding and routing visits to independent gas station owners and small chains.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
