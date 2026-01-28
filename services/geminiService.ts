@@ -22,7 +22,7 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
   `;
 
   const discoveryResponse = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.0-flash",
     contents: discoveryPrompt,
     config: {
       tools: [{ googleSearch: {} }],
@@ -65,7 +65,7 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
   `;
 
   const enrichmentResponse = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.0-flash",
     contents: enrichmentPrompt,
     config: {
       tools: [{ googleSearch: {} }],
@@ -105,7 +105,7 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
   `;
 
   const geoResponse = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-2.0-flash",
     contents: geocodePrompt,
     config: {
       tools: [{ googleMaps: {} }],
@@ -168,7 +168,7 @@ export const optimizeRouteOrder = async (
   `;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-2.0-flash',
     contents: prompt,
     config: {
       temperature: 0.1 // Keep output deterministic and focused on logic
