@@ -78,23 +78,27 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
     return { leads: [], groundingLinks: [] };
   }
 
-  // PHASE 2: Rapid Enrichment & Filtering
+  // PHASE 2: Rapid Enrichment (include all sites, enrich where possible)
   console.log('[FuelProspector] Phase 2: Starting enrichment for', discoveredSites.length, 'sites...');
   const enrichmentPrompt = `
-    LEAD VERIFICATION for "${location}":
+    LEAD ENRICHMENT for "${location}":
 
-    Sites to verify: ${JSON.stringify(discoveredSites.slice(0, 50))}
+    Sites to enrich: ${JSON.stringify(discoveredSites.slice(0, 50))}
 
     TASK:
-    1. For each site, confirm the owner manages 10 or FEWER locations total.
-    2. If they qualify, harvest:
-       - Owner/Principal Name
-       - Precise location count
-       - Contact Phone
-       - Business Email
-       - Website
+    For EACH site in the list above, try to find:
+    - Owner/Principal Name (if available)
+    - Number of locations they operate (estimate if unsure, use 1 for unknown single locations)
+    - Contact Phone
+    - Business Email
+    - Website
 
-    Return ONLY qualified leads as a JSON array.
+    IMPORTANT: Include ALL sites from the input list in your response.
+    - If owner info cannot be found, use "Independent Owner" as the ownerName
+    - If location count is unknown, use 1
+    - Set confidence to "high" if owner verified, "medium" if partially verified, "low" if estimated
+
+    Return ALL sites as a JSON array, even if contact details are incomplete.
   `;
 
   let enrichmentResponse;
@@ -119,7 +123,7 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
               website: { type: Type.STRING },
               confidence: { type: Type.STRING, enum: ['high', 'medium', 'low'] }
             },
-            required: ['name', 'address', 'ownerName', 'numLocations']
+            required: ['name', 'address']
           }
         }
       }
@@ -199,6 +203,9 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
       id: `lead-${index}-${Date.now()}`,
       lat: lat || (userCoords?.lat || 0),
       lng: lng || (userCoords?.lng || 0),
+      ownerName: lead.ownerName || 'Independent Owner',
+      numLocations: lead.numLocations || 1,
+      confidence: lead.confidence || 'medium',
       sourceUrls: groundingLinks.map(l => l.uri)
     };
   }).filter(l => l.lat !== 0 && !isNaN(l.lat));

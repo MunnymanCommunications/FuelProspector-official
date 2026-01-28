@@ -196,7 +196,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`flex flex-col h-screen font-sans text-slate-900 ${showPrintPreview ? 'bg-slate-200' : 'bg-[#F1F5F9]'}`}>
+    <div className={`flex flex-col h-screen font-sans text-slate-900 print:h-auto print:block ${showPrintPreview ? 'bg-slate-200' : 'bg-[#F1F5F9]'}`}>
       {!showPrintPreview && (
         <>
           <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm no-print">
@@ -294,7 +294,7 @@ const App: React.FC = () => {
       )}
 
       {showPrintPreview && (
-        <div className="fixed inset-0 z-[100] bg-slate-100 overflow-y-auto print:bg-white">
+        <div id="print-preview-container" className="fixed inset-0 z-[100] bg-slate-100 overflow-y-auto print:static print:overflow-visible print:bg-white">
           <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center z-50 shadow-md no-print">
             <button
               onClick={() => setShowPrintPreview(false)}

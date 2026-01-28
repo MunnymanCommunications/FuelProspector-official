@@ -76,66 +76,142 @@
 @media print {
     @page {
         size: letter;
-        margin: 0.4in;
+        margin: 0.5in;
     }
 
-    body * {
+    /* Reset body and html for print */
+    body, html {
+        height: auto !important;
+        overflow: visible !important;
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Hide non-print elements */
+    .no-print,
+    header.no-print,
+    .leaflet-control-zoom,
+    .leaflet-control-attribution,
+    .leaflet-routing-container {
         display: none !important;
     }
 
-    #root,
-    #root > div,
-    #report-content,
-    #report-content * {
+    /* Ensure #root and report wrapper are visible */
+    #root {
         display: block !important;
+        position: static !important;
+        overflow: visible !important;
     }
 
+    /* The print preview modal wrapper */
+    #root > div {
+        display: block !important;
+        position: static !important;
+        overflow: visible !important;
+        background: white !important;
+    }
+
+    /* The print preview container - make it static for print */
+    #print-preview-container {
+        position: static !important;
+        display: block !important;
+        overflow: visible !important;
+        background: white !important;
+        height: auto !important;
+        inset: auto !important;
+    }
+
+    /* Report content container */
+    #report-content {
+        display: block !important;
+        visibility: visible !important;
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0.5in !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        position: static !important;
+        overflow: visible !important;
+        background: white !important;
+    }
+
+    /* Ensure all content inside report is visible */
+    #report-content * {
+        visibility: visible !important;
+    }
+
+    /* Preserve flex layouts for report content */
+    #report-content header {
+        display: flex !important;
+    }
+
+    #report-content .flex {
+        display: flex !important;
+    }
+
+    #report-content .grid {
+        display: grid !important;
+    }
+
+    /* Map container for print */
+    #report-content .leaflet-container {
+        display: block !important;
+        visibility: visible !important;
+        height: 3.5in !important;
+        width: 100% !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Ensure map tiles are visible */
+    #report-content .leaflet-tile-pane,
+    #report-content .leaflet-tile,
+    #report-content .leaflet-marker-pane,
+    #report-content .leaflet-marker-icon,
+    #report-content .leaflet-overlay-pane {
+        visibility: visible !important;
+        display: block !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Color preservation */
     .bg-slate-900 {
         background-color: #0f172a !important;
         color: white !important;
-        -webkit-print-color-adjust: exact;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
     }
 
     .bg-indigo-600 {
         background-color: #4f46e5 !important;
         color: white !important;
-        -webkit-print-color-adjust: exact;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
     }
 
     .text-indigo-700 {
         color: #4338ca !important;
-        -webkit-print-color-adjust: exact;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
     }
 
     .border-slate-900 {
         border-color: #0f172a !important;
-        -webkit-print-color-adjust: exact;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
     }
 
-    body, html {
-        height: auto !important;
-        overflow: visible !important;
-        background: white !important;
-    }
-
-    .no-print {
-        display: none !important;
-    }
-
-    .leaflet-control-zoom,
-    .leaflet-control-attribution {
-        display: none !important;
-    }
-
-    #report-content {
-        box-shadow: none !important;
-        border: none !important;
-        padding: 0 !important;
-        width: 100% !important;
-        margin: 0 !important;
-    }
-
+    /* Page break handling */
     .break-inside-avoid {
         page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Force space-y-8 items to have spacing in print */
+    #report-content .space-y-8 > * + * {
+        margin-top: 2rem !important;
     }
 }
