@@ -1,9 +1,43 @@
-/* Leaflet styles - imported from node_modules */
+/* Tailwind CSS v4 */
+@import "tailwindcss";
 @import 'leaflet/dist/leaflet.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Content sources for Tailwind */
+@source "../../**/*.{js,ts,jsx,tsx,html}";
+
+/* Custom marker styles for CSP compliance */
+.custom-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.marker-container {
+  position: relative;
+  width: 32px;
+  height: 32px;
+}
+
+.marker-svg {
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));
+  width: 100%;
+  height: 100%;
+}
+
+.marker-label {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+/* Marker color variants */
+.marker-high { fill: #10b981; }
+.marker-medium { fill: #f59e0b; }
+.marker-low { fill: #64748b; }
 
 /* Leaflet container styles */
 .leaflet-container {

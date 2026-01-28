@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
+      // Use relative paths for Chrome extension compatibility
+      base: './',
       server: {
         port: 3000,
         host: '0.0.0.0',
@@ -23,10 +25,15 @@ export default defineConfig(({ mode }) => {
         postcss: './postcss.config.js'
       },
       build: {
-        // Ensure all dependencies are bundled
+        // CSP-compliant build for Chrome extension
+        target: 'esnext',
+        minify: 'esbuild',
+        cssCodeSplit: false,
         rollupOptions: {
           output: {
-            manualChunks: undefined
+            manualChunks: undefined,
+            // Prevent inline scripts in HTML
+            inlineDynamicImports: true
           }
         }
       }

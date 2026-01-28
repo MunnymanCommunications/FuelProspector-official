@@ -32,17 +32,13 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
     };
   }, []);
 
-  const createMarkerIcon = (color: string, label?: string) => {
+  const createMarkerIcon = (colorClass: string, label?: string) => {
     const html = `
-      <div style="position: relative; width: 32px; height: 32px;">
-        <svg viewBox="0 0 24 24" fill="${color}" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));">
+      <div class="marker-container">
+        <svg viewBox="0 0 24 24" class="marker-svg ${colorClass}" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
         </svg>
-        ${label ? `
-          <div style="position: absolute; top: 4px; left: 50%; transform: translateX(-50%); color: white; font-size: 10px; font-weight: 800; pointer-events: none;">
-            ${label}
-          </div>
-        ` : ''}
+        ${label ? `<div class="marker-label">${label}</div>` : ''}
       </div>
     `;
     return L.divIcon({
@@ -63,11 +59,11 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
     if (leads.length > 0) {
       const group = L.featureGroup();
       leads.forEach(lead => {
-        const color = lead.confidence === 'high' ? '#10b981' : lead.confidence === 'medium' ? '#f59e0b' : '#64748b';
+        const colorClass = lead.confidence === 'high' ? 'marker-high' : lead.confidence === 'medium' ? 'marker-medium' : 'marker-low';
         const routeIdx = route.findIndex(r => r.id === lead.id);
         const label = routeIdx !== -1 ? (routeIdx + 1).toString() : undefined;
 
-        const marker = L.marker([lead.lat, lead.lng], { icon: createMarkerIcon(color, label) })
+        const marker = L.marker([lead.lat, lead.lng], { icon: createMarkerIcon(colorClass, label) })
           .addTo(mapRef.current)
           .bindPopup(`
             <div class="p-1">
