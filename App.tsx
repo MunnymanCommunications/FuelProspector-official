@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { ProspectingState, GasStationLead } from './types';
-import { findLeads, optimizeRouteOrder } from './services/geminiService';
+import { ProspectingState, GasStationLead, EnrichmentProgress } from './types';
+import { discoverLeads, enrichLeads, enrichSingleLead, optimizeRouteOrder } from './services/geminiService';
 import MapView from './components/MapView';
 import LeadCard from './components/LeadCard';
 
@@ -18,7 +18,9 @@ const App: React.FC = () => {
     error: null,
     location: '',
     groundingLinks: [],
-    route: []
+    route: [],
+    isEnriching: false,
+    enrichmentProgress: null
   });
   const [userCoords, setUserCoords] = useState<{lat: number, lng: number} | undefined>();
   const [routeStats, setRouteStats] = useState<{distance: number; time: number} | null>(null);
@@ -52,7 +54,7 @@ const App: React.FC = () => {
 
   const handlePinSubmit = (digit?: string) => {
     const newPin = digit !== undefined ? pin + digit : pin;
-    
+
     if (newPin.length === 4) {
       if (newPin === '2580') {
         setIsAuthorized(true);
@@ -69,21 +71,21 @@ const App: React.FC = () => {
     }
   };
 
+  // Search now only discovers and geocodes - no enrichment
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!state.location) return;
 
-    setState(prev => ({ ...prev, isLoading: true, error: null, leads: [], route: [] }));
+    setState(prev => ({ ...prev, isLoading: true, error: null, leads: [], route: [], enrichmentProgress: null }));
     setRouteStats(null);
     setLoadingStep('Phase 1: Discovering independent sites...');
 
     try {
-      setTimeout(() => setLoadingStep('Phase 2: Verifying owners & harvesting contacts...'), 3000);
-      setTimeout(() => setLoadingStep('Phase 3: Pinpointing map locations...'), 7000);
+      setTimeout(() => setLoadingStep('Phase 2: Pinpointing map locations...'), 3000);
 
       const currentPos = await requestUserLocation();
-      const { leads, groundingLinks } = await findLeads(state.location, currentPos);
-      
+      const { leads, groundingLinks } = await discoverLeads(state.location, currentPos);
+
       setState(prev => ({
         ...prev,
         leads,
@@ -99,22 +101,89 @@ const App: React.FC = () => {
     }
   };
 
+  // Enrich all leads with progress tracking
+  const handleEnrichAll = useCallback(async () => {
+    const unenrichedLeads = state.leads.filter(l => !l.isEnriched);
+    if (unenrichedLeads.length === 0) return;
+
+    setState(prev => ({ ...prev, isEnriching: true, enrichmentProgress: { current: 0, total: unenrichedLeads.length } }));
+
+    try {
+      const { leads: enrichedLeads, groundingLinks } = await enrichLeads(
+        unenrichedLeads,
+        state.location,
+        // Progress callback
+        (progress: EnrichmentProgress) => {
+          setState(prev => ({ ...prev, enrichmentProgress: progress }));
+        },
+        // Lead enriched callback - update individual leads in real-time
+        (enrichedLead: GasStationLead) => {
+          setState(prev => ({
+            ...prev,
+            leads: prev.leads.map(l => l.id === enrichedLead.id ? enrichedLead : l)
+          }));
+        }
+      );
+
+      // Update grounding links
+      setState(prev => ({
+        ...prev,
+        groundingLinks: [...prev.groundingLinks, ...groundingLinks],
+        isEnriching: false,
+        enrichmentProgress: null
+      }));
+    } catch (err: any) {
+      setState(prev => ({
+        ...prev,
+        isEnriching: false,
+        enrichmentProgress: null,
+        error: err.message || 'Enrichment failed. Please try again.'
+      }));
+    }
+  }, [state.leads, state.location]);
+
+  // Enrich a single lead
+  const handleEnrichSingle = useCallback(async (leadId: string) => {
+    const lead = state.leads.find(l => l.id === leadId);
+    if (!lead || lead.isEnriched) return;
+
+    // Mark as enriching
+    setState(prev => ({
+      ...prev,
+      leads: prev.leads.map(l => l.id === leadId ? { ...l, isEnriching: true } : l)
+    }));
+
+    try {
+      const enrichedLead = await enrichSingleLead(lead);
+      setState(prev => ({
+        ...prev,
+        leads: prev.leads.map(l => l.id === leadId ? enrichedLead : l)
+      }));
+    } catch (err: any) {
+      // On error, reset enriching state
+      setState(prev => ({
+        ...prev,
+        leads: prev.leads.map(l => l.id === leadId ? { ...l, isEnriching: false } : l)
+      }));
+    }
+  }, [state.leads]);
+
   const handleGenerateOptimizedRoute = useCallback(async () => {
     if (state.leads.length === 0) return;
     setIsOptimizing(true);
     try {
       const currentPos = await requestUserLocation();
       const orderedIds = await optimizeRouteOrder(state.leads, state.location, currentPos);
-      
+
       const optimizedRoute = orderedIds
         .map(id => state.leads.find(l => l.id === id))
         .filter((l): l is GasStationLead => !!l);
-      
+
       const remaining = state.leads.filter(l => !orderedIds.includes(l.id));
-      
-      setState(prev => ({ 
-        ...prev, 
-        route: [...optimizedRoute, ...remaining] 
+
+      setState(prev => ({
+        ...prev,
+        route: [...optimizedRoute, ...remaining]
       }));
     } catch (err) {
       console.error("Route optimization error:", err);
@@ -135,9 +204,9 @@ const App: React.FC = () => {
   };
 
   const handleExportAll = () => {
-    const csvContent = "data:text/csv;charset=utf-8," 
+    const csvContent = "data:text/csv;charset=utf-8,"
       + ["Company,Address,Owner,Scale,Phone,Email,Website"].concat(
-          state.leads.map(l => `"${l.name}","${l.address}","${l.ownerName}","${l.numLocations || 'N/A'}","${l.contactInfo}","${l.email}","${l.website}"`)
+          state.leads.map(l => `"${l.name}","${l.address}","${l.ownerName || 'N/A'}","${l.numLocations || 'N/A'}","${l.contactInfo || ''}","${l.email || ''}","${l.website || ''}"`)
         ).join("\n");
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csvContent));
@@ -146,6 +215,8 @@ const App: React.FC = () => {
   };
 
   const currentItinerary = state.route.length > 0 ? state.route : state.leads;
+  const unenrichedCount = state.leads.filter(l => !l.isEnriched).length;
+  const enrichedCount = state.leads.filter(l => l.isEnriched).length;
 
   if (!isAuthorized) {
     return (
@@ -154,21 +225,21 @@ const App: React.FC = () => {
           <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-2xl mb-8">F</div>
           <h1 className="text-white text-2xl font-bold mb-2">FuelProspector AI</h1>
           <p className="text-slate-400 text-sm mb-12">Enter 4-digit access pin</p>
-          
+
           <div className="flex gap-4 mb-12">
             {[0, 1, 2, 3].map((i) => (
-              <div 
-                key={i} 
+              <div
+                key={i}
                 className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
                   pin.length > i ? 'bg-indigo-500 border-indigo-500 scale-125' : 'border-slate-700'
-                }`} 
+                }`}
               />
             ))}
           </div>
 
           <div className="grid grid-cols-3 gap-6">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-              <button 
+              <button
                 key={num}
                 onClick={() => handlePinSubmit(num.toString())}
                 className="w-16 h-16 rounded-full border border-slate-800 text-white text-xl font-bold flex items-center justify-center hover:bg-slate-800 active:scale-90 transition-all"
@@ -177,13 +248,13 @@ const App: React.FC = () => {
               </button>
             ))}
             <div />
-            <button 
+            <button
               onClick={() => handlePinSubmit('0')}
               className="w-16 h-16 rounded-full border border-slate-800 text-white text-xl font-bold flex items-center justify-center hover:bg-slate-800 active:scale-90 transition-all"
             >
               0
             </button>
-            <button 
+            <button
               onClick={() => setPin(pin.slice(0, -1))}
               className="w-16 h-16 rounded-full text-slate-500 text-sm font-bold flex items-center justify-center hover:text-white transition-colors"
             >
@@ -220,18 +291,18 @@ const App: React.FC = () => {
               </button>
             </form>
             <div className="flex gap-2">
-              <button 
-                onClick={() => setShowPrintPreview(true)} 
-                disabled={state.leads.length === 0} 
-                className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-100 rounded-xl transition-all shadow-sm active:scale-90" 
+              <button
+                onClick={() => setShowPrintPreview(true)}
+                disabled={state.leads.length === 0}
+                className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-100 rounded-xl transition-all shadow-sm active:scale-90"
                 title="Generate Print Report"
               >
                 🖨️
               </button>
-              <button 
-                onClick={handleExportAll} 
-                disabled={state.leads.length === 0} 
-                className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-100 rounded-xl transition-all shadow-sm active:scale-90" 
+              <button
+                onClick={handleExportAll}
+                disabled={state.leads.length === 0}
+                className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-100 rounded-xl transition-all shadow-sm active:scale-90"
                 title="Export CSV"
               >
                 📤
@@ -241,12 +312,65 @@ const App: React.FC = () => {
 
           <main className="flex-1 flex overflow-hidden">
             <div className="w-96 border-r border-slate-200 bg-white flex flex-col shadow-xl z-20">
-              <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <h2 className="font-black text-slate-800">Results ({state.leads.length})</h2>
-                {state.leads.length > 1 && (
-                  <button onClick={handleGenerateOptimizedRoute} disabled={isOptimizing} className="text-xs font-black text-white bg-indigo-500 hover:bg-indigo-600 px-3 py-1.5 rounded-lg transition-all">
-                    {isOptimizing ? '🤖 Routing...' : '✨ Smart Route'}
+              <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex justify-between items-center mb-3">
+                  <h2 className="font-black text-slate-800">Results ({state.leads.length})</h2>
+                  {state.leads.length > 1 && (
+                    <button onClick={handleGenerateOptimizedRoute} disabled={isOptimizing} className="text-xs font-black text-white bg-indigo-500 hover:bg-indigo-600 px-3 py-1.5 rounded-lg transition-all">
+                      {isOptimizing ? '🤖 Routing...' : '✨ Smart Route'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Enrich All Button with Progress */}
+                {state.leads.length > 0 && unenrichedCount > 0 && (
+                  <button
+                    onClick={handleEnrichAll}
+                    disabled={state.isEnriching}
+                    className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-white py-2.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2"
+                  >
+                    {state.isEnriching ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span>
+                          Enriching {state.enrichmentProgress?.current || 0} of {state.enrichmentProgress?.total || unenrichedCount}...
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        🔍 Enrich All ({unenrichedCount} leads)
+                      </>
+                    )}
                   </button>
+                )}
+
+                {/* Progress bar */}
+                {state.isEnriching && state.enrichmentProgress && (
+                  <div className="mt-2">
+                    <div className="w-full bg-slate-200 rounded-full h-2">
+                      <div
+                        className="bg-amber-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${(state.enrichmentProgress.current / state.enrichmentProgress.total) * 100}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 truncate">
+                      {state.enrichmentProgress.currentName && `Processing: ${state.enrichmentProgress.currentName}`}
+                    </p>
+                  </div>
+                )}
+
+                {/* Enrichment status summary */}
+                {state.leads.length > 0 && (
+                  <div className="flex gap-2 mt-2 text-xs">
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full font-bold">
+                      {enrichedCount} enriched
+                    </span>
+                    {unenrichedCount > 0 && (
+                      <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-full font-bold">
+                        {unenrichedCount} pending
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
@@ -262,7 +386,13 @@ const App: React.FC = () => {
                   </div>
                 ) : (
                   state.leads.map((lead) => (
-                    <LeadCard key={lead.id} lead={lead} onSelect={() => {}} onExport={() => {}} />
+                    <LeadCard
+                      key={lead.id}
+                      lead={lead}
+                      onSelect={() => {}}
+                      onExport={() => {}}
+                      onEnrich={() => handleEnrichSingle(lead.id)}
+                    />
                   ))
                 )}
               </div>
@@ -345,7 +475,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="text-xs leading-relaxed">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Owner Profile</p>
-                      <p className="font-bold text-slate-700">{lead.ownerName || 'Independent'}</p>
+                      <p className="font-bold text-slate-700">{lead.ownerName || 'Not enriched'}</p>
                       <p className="text-slate-500">Portfolio: {lead.numLocations || 'N/A'} {lead.numLocations ? 'units' : ''}</p>
                     </div>
                     <div className="text-xs leading-relaxed">
