@@ -191,14 +191,6 @@ const App: React.FC = () => {
             </button>
           </div>
         </div>
-        <style>{`
-          @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-8px); }
-            75% { transform: translateX(8px); }
-          }
-          .animate-shake { animation: shake 0.2s ease-in-out 0s 2; }
-        `}</style>
       </div>
     );
   }
@@ -304,18 +296,18 @@ const App: React.FC = () => {
       {showPrintPreview && (
         <div className="fixed inset-0 z-[100] bg-slate-100 overflow-y-auto print:bg-white">
           <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center z-50 shadow-md no-print">
-            <button 
+            <button
               onClick={() => setShowPrintPreview(false)}
               className="px-4 py-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-700 font-bold text-sm"
             >
               ← Back to App
             </button>
             <div className="flex gap-3">
-              <button 
+              <button
                 onClick={() => window.print()}
                 className="bg-indigo-600 text-white px-10 py-3 rounded-xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
               >
-                📥 Save as PDF or Print
+                Save as PDF or Print
               </button>
             </div>
           </div>
@@ -325,7 +317,7 @@ const App: React.FC = () => {
               <div>
                 <h1 className="text-4xl font-black text-indigo-700 tracking-tighter leading-none">Sales Itinerary</h1>
                 <p className="text-slate-500 font-bold uppercase tracking-widest mt-2 text-[10px]">
-                  Region: {state.location} • Generated {new Date().toLocaleDateString()}
+                  Region: {state.location} - Generated {new Date().toLocaleDateString()}
                 </p>
               </div>
               <div className="text-right">
@@ -340,7 +332,7 @@ const App: React.FC = () => {
 
             <div className="space-y-8">
               <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 border-b-2 border-slate-900 pb-1">Site Sequence</h2>
-              
+
               {currentItinerary.map((lead, idx) => (
                 <div key={lead.id} className="flex gap-6 pb-6 border-b border-slate-100 last:border-0 break-inside-avoid">
                   <div className="w-10 h-10 bg-slate-900 text-white rounded-full flex items-center justify-center text-lg font-black flex-shrink-0">
@@ -371,61 +363,12 @@ const App: React.FC = () => {
               <span>Proprietary Discovery Engine</span>
             </footer>
           </div>
-          
+
           <div className="max-w-[8.5in] mx-auto mb-20 text-center text-slate-400 text-[10px] no-print">
-            <p>Tip: To save as a file, change Destination to <strong>"Save as PDF"</strong> in your browser's print window.</p>
+            <p>Tip: To save as a file, change Destination to <strong>Save as PDF</strong> in your browser's print window.</p>
           </div>
         </div>
       )}
-
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px; }
-        
-        @media print {
-          @page {
-            size: letter;
-            margin: 0.4in;
-          }
-          
-          body * {
-            display: none !important;
-          }
-          
-          #root, 
-          #root > div,
-          #report-content,
-          #report-content * {
-            display: block !important;
-          }
-
-          .bg-slate-900 { background-color: #0f172a !important; color: white !important; -webkit-print-color-adjust: exact; }
-          .bg-indigo-600 { background-color: #4f46e5 !important; color: white !important; -webkit-print-color-adjust: exact; }
-          .text-indigo-700 { color: #4338ca !important; -webkit-print-color-adjust: exact; }
-          .border-slate-900 { border-color: #0f172a !important; -webkit-print-color-adjust: exact; }
-
-          body, html {
-            height: auto !important;
-            overflow: visible !important;
-            background: white !important;
-          }
-
-          .no-print { display: none !important; }
-          .leaflet-control-zoom, .leaflet-control-attribution { display: none !important; }
-          
-          #report-content {
-            box-shadow: none !important;
-            border: none !important;
-            padding: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-          }
-
-          .break-inside-avoid {
-            page-break-inside: avoid;
-          }
-        }
-      `}</style>
     </div>
   );
 };

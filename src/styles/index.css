@@ -1,0 +1,107 @@
+/* Leaflet styles - imported from node_modules */
+@import 'leaflet/dist/leaflet.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Leaflet container styles */
+.leaflet-container {
+    height: 100%;
+    width: 100%;
+    z-index: 1;
+}
+
+/* Hide the default routing itinerary to keep UI clean */
+.leaflet-routing-container {
+    display: none !important;
+}
+
+/* Custom shake animation for PIN error */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+}
+
+.animate-shake {
+    animation: shake 0.2s ease-in-out 0s 2;
+}
+
+/* Custom scrollbar styles */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 10px;
+}
+
+/* Print styles */
+@media print {
+    @page {
+        size: letter;
+        margin: 0.4in;
+    }
+
+    body * {
+        display: none !important;
+    }
+
+    #root,
+    #root > div,
+    #report-content,
+    #report-content * {
+        display: block !important;
+    }
+
+    .bg-slate-900 {
+        background-color: #0f172a !important;
+        color: white !important;
+        -webkit-print-color-adjust: exact;
+    }
+
+    .bg-indigo-600 {
+        background-color: #4f46e5 !important;
+        color: white !important;
+        -webkit-print-color-adjust: exact;
+    }
+
+    .text-indigo-700 {
+        color: #4338ca !important;
+        -webkit-print-color-adjust: exact;
+    }
+
+    .border-slate-900 {
+        border-color: #0f172a !important;
+        -webkit-print-color-adjust: exact;
+    }
+
+    body, html {
+        height: auto !important;
+        overflow: visible !important;
+        background: white !important;
+    }
+
+    .no-print {
+        display: none !important;
+    }
+
+    .leaflet-control-zoom,
+    .leaflet-control-attribution {
+        display: none !important;
+    }
+
+    #report-content {
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+        width: 100% !important;
+        margin: 0 !important;
+    }
+
+    .break-inside-avoid {
+        page-break-inside: avoid;
+    }
+}

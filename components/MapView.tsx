@@ -1,5 +1,6 @@
-
 import React, { useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet-routing-machine';
 import { GasStationLead } from '../types';
 
 interface MapViewProps {
@@ -8,8 +9,6 @@ interface MapViewProps {
   onSelectLead: (lead: GasStationLead) => void;
   onRouteCalculated?: (summary: { distance: number; time: number }) => void;
 }
-
-declare const L: any;
 
 const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCalculated }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
