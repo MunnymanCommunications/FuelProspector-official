@@ -137,7 +137,7 @@ const App: React.FC = () => {
   const handleExportAll = () => {
     const csvContent = "data:text/csv;charset=utf-8," 
       + ["Company,Address,Owner,Scale,Phone,Email,Website"].concat(
-          state.leads.map(l => `"${l.name}","${l.address}","${l.ownerName}","${l.numLocations}","${l.contactInfo}","${l.email}","${l.website}"`)
+          state.leads.map(l => `"${l.name}","${l.address}","${l.ownerName}","${l.numLocations || 'N/A'}","${l.contactInfo}","${l.email}","${l.website}"`)
         ).join("\n");
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csvContent));
@@ -346,7 +346,7 @@ const App: React.FC = () => {
                     <div className="text-xs leading-relaxed">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Owner Profile</p>
                       <p className="font-bold text-slate-700">{lead.ownerName || 'Independent'}</p>
-                      <p className="text-slate-500">Portfolio: {lead.numLocations} units</p>
+                      <p className="text-slate-500">Portfolio: {lead.numLocations || 'N/A'} {lead.numLocations ? 'units' : ''}</p>
                     </div>
                     <div className="text-xs leading-relaxed">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Lead Contact</p>

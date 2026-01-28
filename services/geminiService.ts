@@ -88,14 +88,14 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
     TASK:
     For EACH site in the list above, try to find:
     - Owner/Principal Name (if available)
-    - Number of locations they operate (estimate if unsure, use 1 for unknown single locations)
+    - Number of locations they operate (only if verified, do NOT guess)
     - Contact Phone
     - Business Email
     - Website
 
     IMPORTANT: Include ALL sites from the input list in your response.
     - If owner info cannot be found, use "Independent Owner" as the ownerName
-    - If location count is unknown, use 1
+    - If location count is unknown, omit numLocations or set to 0
     - Set confidence to "high" if owner verified, "medium" if partially verified, "low" if estimated
 
     Return ALL sites as a JSON array, even if contact details are incomplete.
@@ -204,7 +204,7 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
       lat: lat || (userCoords?.lat || 0),
       lng: lng || (userCoords?.lng || 0),
       ownerName: lead.ownerName || 'Independent Owner',
-      numLocations: lead.numLocations || 1,
+      numLocations: lead.numLocations || 0,  // 0 means unknown, will display as "N/A"
       confidence: lead.confidence || 'medium',
       sourceUrls: groundingLinks.map(l => l.uri)
     };

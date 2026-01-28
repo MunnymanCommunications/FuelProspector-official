@@ -43,7 +43,7 @@ const LeadCard: React.FC<{
 
         <div className="flex items-center gap-2">
           <div className="text-indigo-500">⛽</div>
-          <p className="flex-1"><span className="font-medium">Scale:</span> {lead.numLocations} location(s)</p>
+          <p className="flex-1"><span className="font-medium">Scale:</span> {lead.numLocations || 'N/A'} {lead.numLocations ? 'location(s)' : ''}</p>
         </div>
 
         {lead.contactInfo && (
