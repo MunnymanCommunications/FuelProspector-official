@@ -142,7 +142,7 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
       sourceUrls: groundingLinks.map(l => l.uri),
       isEnriched: false
     };
-  }).filter((l: GasStationLead) => l.lat !== 0 && l.lng !== 0 && !isNaN(l.lat) && !isNaN(l.lng));
+  });
 
   console.log('[FuelProspector] Discovery complete:', leads.length, 'leads with coordinates');
   return { leads, groundingLinks };

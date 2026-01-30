@@ -56,9 +56,12 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
-    if (leads.length > 0) {
+    // Only show pins for leads with valid coordinates
+    const leadsWithCoords = leads.filter(l => l.lat !== 0 && l.lng !== 0 && !isNaN(l.lat) && !isNaN(l.lng));
+
+    if (leadsWithCoords.length > 0) {
       const group = L.featureGroup();
-      leads.forEach(lead => {
+      leadsWithCoords.forEach(lead => {
         const colorClass = lead.confidence === 'high' ? 'marker-high' : lead.confidence === 'medium' ? 'marker-medium' : 'marker-low';
         const routeIdx = route.findIndex(r => r.id === lead.id);
         const label = routeIdx !== -1 ? (routeIdx + 1).toString() : undefined;
@@ -72,7 +75,7 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
             </div>
           `)
           .on('click', () => onSelectLead(lead));
-        
+
         markersRef.current.push(marker);
         group.addLayer(marker);
       });

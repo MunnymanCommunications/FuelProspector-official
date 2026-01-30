@@ -9,6 +9,8 @@ const LeadCard: React.FC<{
   onEnrich?: () => void;
   onDelete?: () => void;
 }> = ({ lead, onSelect, onExport, onEnrich, onDelete }) => {
+  const hasValidCoords = lead.lat !== 0 && lead.lng !== 0 && !isNaN(lead.lat) && !isNaN(lead.lng);
+
   const copyToClipboard = () => {
     const text = `Company: ${lead.name}\nLocation: ${lead.address}\nOwner: ${lead.ownerName || 'N/A'}\nPhone: ${lead.contactInfo || 'N/A'}\nEmail: ${lead.email || 'N/A'}\nWebsite: ${lead.website || 'N/A'}`;
     navigator.clipboard.writeText(text);
@@ -44,7 +46,12 @@ const LeadCard: React.FC<{
       <div className="space-y-2 text-sm text-slate-600">
         <div className="flex items-start gap-2">
           <div className="mt-1 text-indigo-500">📍</div>
-          <p className="flex-1">{lead.address}</p>
+          <div className="flex-1">
+            <p>{lead.address}</p>
+            {!hasValidCoords && (
+              <p className="text-xs text-amber-600 italic mt-1">Geo location not logged</p>
+            )}
+          </div>
         </div>
 
         {lead.isEnriched ? (
