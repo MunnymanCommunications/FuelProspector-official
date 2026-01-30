@@ -136,13 +136,13 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
       id: `lead-${index}-${Date.now()}`,
       name: site.name,
       address: site.address,
-      lat: lat || (userCoords?.lat || 0),
-      lng: lng || (userCoords?.lng || 0),
+      lat: lat,
+      lng: lng,
       confidence: 'low' as const,
       sourceUrls: groundingLinks.map(l => l.uri),
       isEnriched: false
     };
-  }).filter((l: GasStationLead) => l.lat !== 0 && !isNaN(l.lat));
+  }).filter((l: GasStationLead) => l.lat !== 0 && l.lng !== 0 && !isNaN(l.lat) && !isNaN(l.lng));
 
   console.log('[FuelProspector] Discovery complete:', leads.length, 'leads with coordinates');
   return { leads, groundingLinks };

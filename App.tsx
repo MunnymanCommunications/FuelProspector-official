@@ -46,11 +46,8 @@ const App: React.FC = () => {
     });
   }, []);
 
-  useEffect(() => {
-    if (isAuthorized) {
-      requestUserLocation();
-    }
-  }, [isAuthorized, requestUserLocation]);
+  // User location is only requested when needed for route optimization or Google Maps export
+  // Not requested automatically to avoid confusion with search area pins
 
   const handlePinSubmit = (digit?: string) => {
     const newPin = digit !== undefined ? pin + digit : pin;
@@ -83,8 +80,8 @@ const App: React.FC = () => {
     try {
       setTimeout(() => setLoadingStep('Phase 2: Pinpointing map locations...'), 3000);
 
-      const currentPos = await requestUserLocation();
-      const { leads, groundingLinks } = await discoverLeads(state.location, currentPos);
+      // Don't pass user coords to avoid placing pins at user location when geocoding fails
+      const { leads, groundingLinks } = await discoverLeads(state.location);
 
       setState(prev => ({
         ...prev,
@@ -141,6 +138,15 @@ const App: React.FC = () => {
       }));
     }
   }, [state.leads, state.location]);
+
+  // Delete a lead from the list
+  const handleDeleteLead = useCallback((leadId: string) => {
+    setState(prev => ({
+      ...prev,
+      leads: prev.leads.filter(l => l.id !== leadId),
+      route: prev.route.filter(l => l.id !== leadId)
+    }));
+  }, []);
 
   // Enrich a single lead
   const handleEnrichSingle = useCallback(async (leadId: string) => {
@@ -392,6 +398,7 @@ const App: React.FC = () => {
                       onSelect={() => {}}
                       onExport={() => {}}
                       onEnrich={() => handleEnrichSingle(lead.id)}
+                      onDelete={() => handleDeleteLead(lead.id)}
                     />
                   ))
                 )}

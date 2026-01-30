@@ -7,7 +7,8 @@ const LeadCard: React.FC<{
   onSelect: () => void;
   onExport: () => void;
   onEnrich?: () => void;
-}> = ({ lead, onSelect, onExport, onEnrich }) => {
+  onDelete?: () => void;
+}> = ({ lead, onSelect, onExport, onEnrich, onDelete }) => {
   const copyToClipboard = () => {
     const text = `Company: ${lead.name}\nLocation: ${lead.address}\nOwner: ${lead.ownerName || 'N/A'}\nPhone: ${lead.contactInfo || 'N/A'}\nEmail: ${lead.email || 'N/A'}\nWebsite: ${lead.website || 'N/A'}`;
     navigator.clipboard.writeText(text);
@@ -125,10 +126,19 @@ const LeadCard: React.FC<{
         )}
         <button
           onClick={(e) => { e.stopPropagation(); copyToClipboard(); }}
-          className={`${!lead.isEnriched && onEnrich ? 'flex-1' : 'flex-1'} bg-slate-50 hover:bg-slate-100 text-slate-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors`}
+          className="flex-1 bg-slate-50 hover:bg-slate-100 text-slate-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors"
         >
           📋 Copy Details
         </button>
+        {onDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="px-3 bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg text-xs font-bold flex items-center justify-center transition-colors"
+            title="Remove from list"
+          >
+            🗑️
+          </button>
+        )}
       </div>
     </div>
   );
