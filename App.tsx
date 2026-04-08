@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ProspectingState, GasStationLead, EnrichmentProgress } from './types';
 import { discoverLeads, enrichLeads, enrichSingleLead, optimizeRouteOrder } from './services/geminiService';
 import MapView from './components/MapView';
@@ -22,35 +22,10 @@ const App: React.FC = () => {
     isEnriching: false,
     enrichmentProgress: null
   });
-  const [userCoords, setUserCoords] = useState<{lat: number, lng: number} | undefined>();
   const [routeStats, setRouteStats] = useState<{distance: number; time: number} | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [showPrintPreview, setShowPrintPreview] = useState(false);
-
-  const requestUserLocation = useCallback((): Promise<{lat: number, lng: number} | undefined> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve(undefined);
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setUserCoords(coords);
-          resolve(coords);
-        },
-        () => resolve(undefined),
-        { enableHighAccuracy: true, timeout: 5000 }
-      );
-    });
-  }, []);
-
-  useEffect(() => {
-    if (isAuthorized) {
-      requestUserLocation();
-    }
-  }, [isAuthorized, requestUserLocation]);
 
   const handlePinSubmit = (digit?: string) => {
     const newPin = digit !== undefined ? pin + digit : pin;
@@ -83,8 +58,7 @@ const App: React.FC = () => {
     try {
       setTimeout(() => setLoadingStep('Phase 2: Pinpointing map locations...'), 3000);
 
-      const currentPos = await requestUserLocation();
-      const { leads, groundingLinks } = await discoverLeads(state.location, currentPos);
+      const { leads, groundingLinks } = await discoverLeads(state.location);
 
       setState(prev => ({
         ...prev,
@@ -172,8 +146,7 @@ const App: React.FC = () => {
     if (state.leads.length === 0) return;
     setIsOptimizing(true);
     try {
-      const currentPos = await requestUserLocation();
-      const orderedIds = await optimizeRouteOrder(state.leads, state.location, currentPos);
+      const orderedIds = await optimizeRouteOrder(state.leads, state.location);
 
       const optimizedRoute = orderedIds
         .map(id => state.leads.find(l => l.id === id))
@@ -191,17 +164,25 @@ const App: React.FC = () => {
     } finally {
       setIsOptimizing(false);
     }
-  }, [state.leads, state.location, requestUserLocation]);
+  }, [state.leads, state.location]);
 
   const openInGoogleMaps = () => {
     if (state.route.length === 0) return;
-    const origin = userCoords ? `${userCoords.lat},${userCoords.lng}` : encodeURIComponent(state.route[0].address);
+    const origin = encodeURIComponent(state.route[0].address);
     const destination = encodeURIComponent(state.route[state.route.length - 1].address);
-    const waypointsArr = userCoords ? state.route.slice(0, state.route.length - 1) : state.route.slice(1, state.route.length - 1);
+    const waypointsArr = state.route.slice(1, state.route.length - 1);
     const waypoints = waypointsArr.map(l => encodeURIComponent(l.address)).join('|');
     const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}&travelmode=driving`;
     window.open(url, '_blank');
   };
+
+  const handleDeleteLead = useCallback((leadId: string) => {
+    setState(prev => ({
+      ...prev,
+      leads: prev.leads.filter(l => l.id !== leadId),
+      route: prev.route.filter(l => l.id !== leadId)
+    }));
+  }, []);
 
   const handleExportAll = () => {
     const csvContent = "data:text/csv;charset=utf-8,"
@@ -392,6 +373,7 @@ const App: React.FC = () => {
                       onSelect={() => {}}
                       onExport={() => {}}
                       onEnrich={() => handleEnrichSingle(lead.id)}
+                      onDelete={() => handleDeleteLead(lead.id)}
                     />
                   ))
                 )}

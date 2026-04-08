@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "description": "AI-powered sales discovery engine for independent fuel station prospecting",
   "permissions": [
-    "geolocation",
     "storage"
   ],
   "host_permissions": [
