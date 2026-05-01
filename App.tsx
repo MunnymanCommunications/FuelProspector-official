@@ -31,7 +31,8 @@ const App: React.FC = () => {
     const newPin = digit !== undefined ? pin + digit : pin;
 
     if (newPin.length === 4) {
-      if (newPin === '2580') {
+      const expectedPin = process.env.APP_PIN;
+      if (expectedPin && newPin === expectedPin) {
         setIsAuthorized(true);
         sessionStorage.setItem('fprospector_auth', 'true');
       } else {
@@ -45,6 +46,8 @@ const App: React.FC = () => {
       setPin(newPin);
     }
   };
+
+  const apiKeyMissing = !process.env.API_KEY;
 
   // Search now only discovers and geocodes - no enrichment
   const handleSearch = async (e: React.FormEvent) => {
@@ -249,6 +252,11 @@ const App: React.FC = () => {
 
   return (
     <div className={`flex flex-col h-screen font-sans text-slate-900 print:h-auto print:block ${showPrintPreview ? 'bg-slate-200' : 'bg-[#F1F5F9]'}`}>
+      {!showPrintPreview && apiKeyMissing && (
+        <div className="bg-red-600 text-white px-6 py-3 text-sm font-bold text-center no-print">
+          Configuration error: GEMINI_API_KEY was not set at build time. Set it as a build-time environment variable in Coolify and redeploy.
+        </div>
+      )}
       {!showPrintPreview && (
         <>
           <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm no-print">

@@ -1,5 +1,8 @@
 [phases.build]
 cmds = [
+  "if [ -z \"$GEMINI_API_KEY\" ]; then echo 'ERROR: GEMINI_API_KEY is not set as a build-time environment variable. Add it in Coolify (Environment Variables -> check Build Variable) and redeploy.' >&2; exit 1; fi",
+  "if [ -z \"$APP_PIN\" ]; then echo 'ERROR: APP_PIN is not set as a build-time environment variable. Add it in Coolify (Environment Variables -> check Build Variable) and redeploy.' >&2; exit 1; fi",
   "echo \"GEMINI_API_KEY=$GEMINI_API_KEY\" > .env",
+  "echo \"APP_PIN=$APP_PIN\" >> .env",
   "npm run build"
 ]

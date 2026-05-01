@@ -11,12 +11,8 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
   console.log('[FuelProspector] User coordinates:', userCoords);
 
   const apiKey = process.env.API_KEY;
-  console.log('[FuelProspector] API Key configured:', apiKey ? `Yes (${apiKey.substring(0, 8)}...)` : 'NO - MISSING!');
-
   if (!apiKey) {
-    const error = new Error('GEMINI_API_KEY is not configured. Please add it to your .env file.');
-    console.error('[FuelProspector] ERROR:', error.message);
-    throw error;
+    throw new Error('GEMINI_API_KEY is not configured. Set it as a build-time environment variable in Coolify and redeploy.');
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -38,7 +34,7 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
   let discoveryResponse;
   try {
     discoveryResponse = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: discoveryPrompt,
       config: {
         tools: [{ googleSearch: {} }],
@@ -181,7 +177,7 @@ export const enrichSingleLead = async (lead: GasStationLead): Promise<GasStation
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: enrichmentPrompt,
       config: {
         tools: [{ googleSearch: {} }],
@@ -290,7 +286,7 @@ export const enrichLeads = async (
 
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.5-flash",
         contents: enrichmentPrompt,
         config: {
           tools: [{ googleSearch: {} }],
@@ -426,7 +422,7 @@ export const optimizeRouteOrder = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         temperature: 0.1
