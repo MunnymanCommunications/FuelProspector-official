@@ -398,13 +398,15 @@ export const optimizeRouteOrder = async (
     TASK: Sequence these gas station leads to create the SHORTEST possible driving distance.
     START POINT: ${userCoords ? `Coordinates (${userCoords.lat}, ${userCoords.lng})` : startLocation}
 
-    LEADS TO SEQUENCE:
-    ${leads.map(l => `ID: ${l.id} | Name: ${l.name} | Address: ${l.address} | LatLng: ${l.lat},${l.lng}`).join('\n')}
+    LEADS TO SEQUENCE (numbered 1 through ${leads.length}):
+    ${leads.map((l, i) => `${i + 1}. ${l.name} | ${l.address} | LatLng: ${l.lat},${l.lng}`).join('\n')}
 
     INSTRUCTIONS:
-    1. Calculate the most logical "next-nearest-neighbor" route.
+    1. Calculate the most logical "next-nearest-neighbor" route from the start point.
     2. Minimize backtracking.
-    3. Return ONLY a plain text list of lead IDs in the optimized sequence, one per line.
+    3. Return ONLY a comma-separated list of the position numbers in optimized order.
+       Example for 5 leads: 3,1,4,2,5
+       Do NOT return names, addresses, or any other text. Just the numbers.
   `;
 
   try {
@@ -419,19 +421,33 @@ export const optimizeRouteOrder = async (
     const text = response.text || "";
     console.log('[FuelProspector] Route optimization response:', text.substring(0, 200));
 
-    const validIds = leads.map(l => l.id);
-    const foundIds = text.split('\n')
-      .map(line => line.trim())
-      .map(line => validIds.find(id => line.includes(id)))
-      .filter((id): id is string => !!id);
+    // Extract all integers from the response, then map 1-based positions to lead IDs.
+    const positions = (text.match(/\d+/g) || [])
+      .map(n => parseInt(n, 10))
+      .filter(n => Number.isInteger(n) && n >= 1 && n <= leads.length);
 
-    if (foundIds.length === 0) {
-      console.log('[FuelProspector] Route optimization: No valid IDs found, using default order');
+    // Deduplicate while preserving order.
+    const seen = new Set<number>();
+    const orderedIds: string[] = [];
+    for (const pos of positions) {
+      if (!seen.has(pos)) {
+        seen.add(pos);
+        orderedIds.push(leads[pos - 1].id);
+      }
+    }
+
+    if (orderedIds.length === 0) {
+      console.log('[FuelProspector] Route optimization: No valid positions found, using default order');
       return leads.map(l => l.id);
     }
 
-    console.log('[FuelProspector] Route optimization complete:', foundIds.length, 'leads ordered');
-    return foundIds;
+    // Append any leads the model omitted, in original order, so nothing is dropped.
+    for (const lead of leads) {
+      if (!orderedIds.includes(lead.id)) orderedIds.push(lead.id);
+    }
+
+    console.log('[FuelProspector] Route optimization complete:', orderedIds.length, 'leads ordered');
+    return orderedIds;
   } catch (error: any) {
     console.error('[FuelProspector] Route optimization ERROR:', error.message);
     console.error('[FuelProspector] Full error:', error);
