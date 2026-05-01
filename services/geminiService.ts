@@ -1,6 +1,24 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { GasStationLead, GroundingLink, EnrichmentProgress } from "../types";
+
+// Grounded responses (googleSearch / googleMaps) cannot use responseMimeType:
+// "application/json", so the model returns text. It often wraps JSON in
+// ```json ... ``` fences. Strip them before parsing.
+const parseGroundedJson = <T>(text: string | undefined, fallback: T): T => {
+  if (!text) return fallback;
+  let cleaned = text.trim();
+  const fence = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fence) cleaned = fence[1].trim();
+  // Last resort: find the first [ or { and parse from there.
+  const firstBracket = cleaned.search(/[\[{]/);
+  if (firstBracket > 0) cleaned = cleaned.slice(firstBracket);
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    return fallback;
+  }
+};
 
 // PHASE 1: Discover sites and geocode them (no enrichment)
 export const discoverLeads = async (location: string, userCoords?: { lat: number, lng: number }): Promise<{
@@ -28,7 +46,14 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
     3. Include "mom-and-pop" standalone stations.
     4. Exclude major national chains (Shell, Exxon, BP, etc.).
 
-    Return a JSON array of objects with 'name', 'address', and 'brand'.
+    OUTPUT FORMAT (REQUIRED):
+    Return ONLY a raw JSON array. No prose, no markdown fences, no explanation.
+    Each element must be an object with exactly these keys:
+      "name"    (string, required)
+      "address" (string, required)
+      "brand"   (string, optional)
+
+    Example: [{"name":"Stop & Save","address":"123 Main St, City, ST","brand":"Stop & Save"}]
   `;
 
   let discoveryResponse;
@@ -37,20 +62,7 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
       model: "gemini-2.5-flash",
       contents: discoveryPrompt,
       config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              address: { type: Type.STRING },
-              brand: { type: Type.STRING }
-            },
-            required: ['name', 'address']
-          }
-        }
+        tools: [{ googleSearch: {} }]
       }
     });
     console.log('[FuelProspector] Phase 1 response received:', discoveryResponse.text?.substring(0, 200));
@@ -60,14 +72,13 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
     throw new Error(`Phase 1 (Discovery) failed: ${error.message}`);
   }
 
-  let discoveredSites;
-  try {
-    discoveredSites = JSON.parse(discoveryResponse.text || "[]");
-    console.log('[FuelProspector] Phase 1 discovered sites:', discoveredSites.length);
-  } catch (parseError: any) {
-    console.error('[FuelProspector] Phase 1 JSON parse error:', parseError.message);
-    console.error('[FuelProspector] Raw response was:', discoveryResponse.text);
-    throw new Error(`Phase 1 JSON parse failed: ${parseError.message}`);
+  const discoveredSites = parseGroundedJson<Array<{ name: string; address: string; brand?: string }>>(
+    discoveryResponse.text,
+    []
+  );
+  console.log('[FuelProspector] Phase 1 discovered sites:', discoveredSites.length);
+  if (discoveredSites.length === 0 && discoveryResponse.text) {
+    console.warn('[FuelProspector] Phase 1 returned text but parsed to 0 sites. Raw:', discoveryResponse.text.substring(0, 500));
   }
 
   if (discoveredSites.length === 0) {
@@ -172,7 +183,10 @@ export const enrichSingleLead = async (lead: GasStationLead): Promise<GasStation
     - If location count is unknown, omit it
     - Set confidence to "high" if owner verified from official sources, "medium" if from reviews/listings, "low" if uncertain
 
-    Return a single JSON object with: ownerName, numLocations, contactInfo, email, website, confidence
+    OUTPUT FORMAT (REQUIRED):
+    Return ONLY a single raw JSON object. No prose, no markdown fences, no explanation.
+    Keys: ownerName (string), numLocations (number), contactInfo (string),
+          email (string), website (string), confidence ("high"|"medium"|"low").
   `;
 
   try {
@@ -180,23 +194,11 @@ export const enrichSingleLead = async (lead: GasStationLead): Promise<GasStation
       model: "gemini-2.5-flash",
       contents: enrichmentPrompt,
       config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            ownerName: { type: Type.STRING },
-            numLocations: { type: Type.NUMBER },
-            contactInfo: { type: Type.STRING },
-            email: { type: Type.STRING },
-            website: { type: Type.STRING },
-            confidence: { type: Type.STRING, enum: ['high', 'medium', 'low'] }
-          }
-        }
+        tools: [{ googleSearch: {} }]
       }
     });
 
-    const enrichedData = JSON.parse(response.text || "{}");
+    const enrichedData = parseGroundedJson<any>(response.text, {});
     console.log('[FuelProspector] Single lead enriched:', lead.name);
 
     return {
@@ -281,7 +283,10 @@ export const enrichLeads = async (
       - If location count is unknown, omit numLocations or set to 0
       - Set confidence to "high" if owner verified, "medium" if partially verified, "low" if estimated
 
-      Return a JSON array with ${batch.length} objects.
+      OUTPUT FORMAT (REQUIRED):
+      Return ONLY a raw JSON array of ${batch.length} objects. No prose, no markdown fences.
+      Each object keys: name, address, ownerName, numLocations, contactInfo,
+      email, website, confidence ("high"|"medium"|"low").
     `;
 
     try {
@@ -289,25 +294,7 @@ export const enrichLeads = async (
         model: "gemini-2.5-flash",
         contents: enrichmentPrompt,
         config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                address: { type: Type.STRING },
-                ownerName: { type: Type.STRING },
-                numLocations: { type: Type.NUMBER },
-                contactInfo: { type: Type.STRING },
-                email: { type: Type.STRING },
-                website: { type: Type.STRING },
-                confidence: { type: Type.STRING, enum: ['high', 'medium', 'low'] }
-              },
-              required: ['name', 'address']
-            }
-          }
+          tools: [{ googleSearch: {} }]
         }
       });
 
@@ -316,7 +303,7 @@ export const enrichLeads = async (
         if (chunk.web) allGroundingLinks.push({ uri: chunk.web.uri, title: chunk.web.title });
       });
 
-      const enrichedBatch = JSON.parse(response.text || "[]");
+      const enrichedBatch = parseGroundedJson<any[]>(response.text, []);
 
       // Match enriched data back to original leads
       for (const originalLead of batch) {
