@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { GasStationLead, GroundingLink, EnrichmentProgress } from "../types";
+import { GasStationLead, GroundingLink, EnrichmentProgress, DiscoveryProgress } from "../types";
 
 // Grounded responses (googleSearch / googleMaps) cannot use responseMimeType:
 // "application/json", so the model returns text. It often wraps JSON in
@@ -378,6 +378,230 @@ export const findLeads = async (location: string, userCoords?: { lat: number, ln
     groundingLinks: [...groundingLinks, ...enrichGroundingLinks]
   };
 };
+
+// ─── DEEP SCAN: zip-code-segmented discovery ─────────────────────────────────
+
+// Fetch all zip/postal codes for a given city using grounded search
+export const getZipCodesForCity = async (location: string): Promise<string[]> => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+
+  const ai = new GoogleGenAI({ apiKey });
+  const prompt = `List every postal/zip code that falls within "${location}" city limits and its immediate metro area.
+
+OUTPUT FORMAT (REQUIRED):
+Return ONLY a raw JSON array of postal code strings. No prose, no markdown fences.
+Example: ["43201","43202","43203","43204"]`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { tools: [{ googleSearch: {} }] }
+    });
+    const codes = parseGroundedJson<string[]>(response.text, []);
+    const valid = codes.filter(z => typeof z === 'string' && z.trim().length > 0).map(z => z.trim());
+    console.log(`[FuelProspector] Deep scan: found ${valid.length} zip/postal codes for ${location}`);
+    return valid;
+  } catch (error: any) {
+    console.error('[FuelProspector] Zip fetch ERROR:', error.message);
+    return [];
+  }
+};
+
+// Run a targeted discovery search for one zip code (no geocoding)
+const discoverSitesForZip = async (
+  ai: GoogleGenAI,
+  zip: string,
+  cityName: string
+): Promise<{ sites: Array<{ name: string; address: string; brand?: string }>, groundingLinks: GroundingLink[] }> => {
+  const prompt = `
+    Find every independent gas station and small local chain physically located in zip code ${zip} (${cityName}).
+
+    INSTRUCTIONS:
+    1. Include local/regional brands, small chains, and standalone "mom-and-pop" stations.
+    2. List EVERY location within or immediately adjacent to zip code ${zip}.
+    3. Exclude major national chains (Shell, Exxon, BP, Chevron, Mobil, Marathon, Sunoco, Circle K, Speedway, Wawa, QuikTrip, Casey's, etc.).
+
+    OUTPUT FORMAT (REQUIRED):
+    Return ONLY a raw JSON array. No prose, no markdown fences.
+    Each element: {"name":"...","address":"...","brand":"..."}
+    Example: [{"name":"Stop & Save","address":"123 Main St, Columbus, OH ${zip}","brand":"Stop & Save"}]
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { tools: [{ googleSearch: {} }] }
+    });
+
+    const sites = parseGroundedJson<Array<{ name: string; address: string; brand?: string }>>(
+      response.text, []
+    );
+
+    const groundingLinks: GroundingLink[] = [];
+    response.candidates?.[0]?.groundingMetadata?.groundingChunks?.forEach((chunk: any) => {
+      if (chunk.web) groundingLinks.push({ uri: chunk.web.uri, title: chunk.web.title });
+    });
+
+    console.log(`[FuelProspector] Zip ${zip}: found ${sites.length} sites`);
+    return { sites, groundingLinks };
+  } catch (error: any) {
+    console.error(`[FuelProspector] Zip ${zip} ERROR:`, error.message);
+    return { sites: [], groundingLinks: [] };
+  }
+};
+
+// Remove duplicate stations by normalised name + address prefix
+const deduplicateSites = (
+  sites: Array<{ name: string; address: string; brand?: string }>
+): Array<{ name: string; address: string; brand?: string }> => {
+  const seen = new Set<string>();
+  return sites.filter(site => {
+    const key = `${site.name.toLowerCase().replace(/\s+/g, '').substring(0, 15)}|${site.address.toLowerCase().replace(/\s+/g, '').substring(0, 25)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+// Geocode one batch of sites and return leads (mirrors the geocoding block in discoverLeads)
+const geocodeSitesBatch = async (
+  ai: GoogleGenAI,
+  sites: Array<{ name: string; address: string; brand?: string }>,
+  idOffset: number,
+  userCoords?: { lat: number; lng: number }
+): Promise<GasStationLead[]> => {
+  const geocodePrompt = `
+    Provide coordinates for these physical locations:
+    ${sites.map(l => `${l.name} at ${l.address}`).join('\n')}
+
+    Format: [Name] | [Lat] | [Lng]
+  `;
+
+  let geoResponse;
+  try {
+    geoResponse = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: geocodePrompt,
+      config: {
+        tools: [{ googleMaps: {} }],
+        toolConfig: {
+          retrievalConfig: {
+            latLng: userCoords ? { latitude: userCoords.lat, longitude: userCoords.lng } : undefined
+          }
+        }
+      }
+    });
+  } catch (error: any) {
+    console.error('[FuelProspector] Geocode batch ERROR:', error.message);
+    return [];
+  }
+
+  const geoText = geoResponse.text || '';
+  const timestamp = Date.now();
+
+  return sites.map((site, idx) => {
+    const lines = geoText.split('\n');
+    let lat = 0, lng = 0;
+
+    for (const line of lines) {
+      if (
+        line.toLowerCase().includes(site.name.toLowerCase().substring(0, 10)) ||
+        line.toLowerCase().includes(site.address.toLowerCase().substring(0, 10))
+      ) {
+        const nums = line.match(/-?\d+\.\d+/g);
+        if (nums && nums.length >= 2) {
+          lat = parseFloat(nums[0]);
+          lng = parseFloat(nums[1]);
+          break;
+        }
+      }
+    }
+
+    return {
+      id: `lead-deep-${idOffset + idx}-${timestamp}`,
+      name: site.name,
+      address: site.address,
+      lat: lat || (userCoords?.lat || 0),
+      lng: lng || (userCoords?.lng || 0),
+      confidence: 'low' as const,
+      sourceUrls: [],
+      isEnriched: false
+    };
+  }).filter(l => l.lat !== 0 && !isNaN(l.lat));
+};
+
+// Deep scan: fetch zip codes → parallel per-zip discovery → dedup → geocode
+export const discoverLeadsEnhanced = async (
+  location: string,
+  userCoords?: { lat: number; lng: number },
+  onProgress?: (progress: DiscoveryProgress) => void
+): Promise<{ leads: GasStationLead[], groundingLinks: GroundingLink[] }> => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+
+  const ai = new GoogleGenAI({ apiKey });
+  const allGroundingLinks: GroundingLink[] = [];
+
+  // Phase 0: fetch zip codes
+  onProgress?.({ phase: 'fetching-zips', current: 0, total: 0 });
+  const zipCodes = await getZipCodesForCity(location);
+
+  if (zipCodes.length < 3) {
+    console.log('[FuelProspector] Deep scan: too few zip codes returned, falling back to standard discovery');
+    return discoverLeads(location, userCoords);
+  }
+
+  // Phase 1: scan each zip code, 5 concurrent
+  const allRawSites: Array<{ name: string; address: string; brand?: string }> = [];
+  const concurrency = 5;
+
+  for (let i = 0; i < zipCodes.length; i += concurrency) {
+    const batch = zipCodes.slice(i, i + concurrency);
+    onProgress?.({ phase: 'scanning', current: i, total: zipCodes.length, currentZip: batch[0] });
+
+    const batchResults = await Promise.all(
+      batch.map(zip => discoverSitesForZip(ai, zip, location))
+    );
+
+    for (const result of batchResults) {
+      allRawSites.push(...result.sites);
+      allGroundingLinks.push(...result.groundingLinks);
+    }
+  }
+
+  onProgress?.({ phase: 'scanning', current: zipCodes.length, total: zipCodes.length });
+
+  // Deduplicate across all zip results
+  const uniqueSites = deduplicateSites(allRawSites);
+  console.log(`[FuelProspector] Deep scan: ${allRawSites.length} raw → ${uniqueSites.length} unique sites`);
+
+  if (uniqueSites.length === 0) {
+    return { leads: [], groundingLinks: allGroundingLinks };
+  }
+
+  // Phase 2: geocode in batches of 25
+  const geocodeBatchSize = 25;
+  const allLeads: GasStationLead[] = [];
+  onProgress?.({ phase: 'geocoding', current: 0, total: uniqueSites.length });
+
+  for (let i = 0; i < uniqueSites.length; i += geocodeBatchSize) {
+    const batch = uniqueSites.slice(i, i + geocodeBatchSize);
+    const batchLeads = await geocodeSitesBatch(ai, batch, i, userCoords);
+    allLeads.push(...batchLeads);
+    onProgress?.({ phase: 'geocoding', current: Math.min(i + geocodeBatchSize, uniqueSites.length), total: uniqueSites.length });
+  }
+
+  const sourceUris = allGroundingLinks.map(l => l.uri);
+  const leads = allLeads.map(l => ({ ...l, sourceUrls: sourceUris }));
+
+  console.log(`[FuelProspector] Deep scan complete: ${leads.length} geocoded leads`);
+  return { leads, groundingLinks: allGroundingLinks };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const optimizeRouteOrder = async (
   leads: GasStationLead[],

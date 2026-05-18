@@ -1,7 +1,8 @@
 
 import React, { useState, useCallback } from 'react';
 import { ProspectingState, GasStationLead, EnrichmentProgress } from './types';
-import { discoverLeads, enrichLeads, enrichSingleLead, optimizeRouteOrder } from './services/geminiService';
+import { discoverLeads, discoverLeadsEnhanced, enrichLeads, enrichSingleLead, optimizeRouteOrder } from './services/geminiService';
+import { DiscoveryProgress } from './types';
 import MapView from './components/MapView';
 import LeadCard from './components/LeadCard';
 
@@ -26,6 +27,8 @@ const App: React.FC = () => {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [searchMode, setSearchMode] = useState<'standard' | 'deep'>('standard');
+  const [discoveryProgress, setDiscoveryProgress] = useState<DiscoveryProgress | null>(null);
 
   const handlePinSubmit = (digit?: string) => {
     const newPin = digit !== undefined ? pin + digit : pin;
@@ -49,32 +52,48 @@ const App: React.FC = () => {
 
   const apiKeyMissing = !process.env.API_KEY;
 
-  // Search now only discovers and geocodes - no enrichment
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!state.location) return;
 
     setState(prev => ({ ...prev, isLoading: true, error: null, leads: [], route: [], enrichmentProgress: null }));
     setRouteStats(null);
-    setLoadingStep('Phase 1: Discovering independent sites...');
+    setDiscoveryProgress(null);
 
     try {
-      setTimeout(() => setLoadingStep('Phase 2: Pinpointing map locations...'), 3000);
+      let leads, groundingLinks;
 
-      const { leads, groundingLinks } = await discoverLeads(state.location);
+      if (searchMode === 'deep') {
+        setLoadingStep('Deep Scan: Fetching zip codes...');
+        ({ leads, groundingLinks } = await discoverLeadsEnhanced(
+          state.location,
+          undefined,
+          (progress: DiscoveryProgress) => {
+            setDiscoveryProgress(progress);
+            if (progress.phase === 'fetching-zips') {
+              setLoadingStep('Deep Scan: Fetching zip codes...');
+            } else if (progress.phase === 'scanning') {
+              setLoadingStep(`Deep Scan: Scanning zip codes (${progress.current}/${progress.total})...`);
+            } else if (progress.phase === 'geocoding') {
+              setLoadingStep(`Deep Scan: Geocoding ${progress.total} discovered sites...`);
+            }
+          }
+        ));
+      } else {
+        setLoadingStep('Phase 1: Discovering independent sites...');
+        setTimeout(() => setLoadingStep('Phase 2: Pinpointing map locations...'), 3000);
+        ({ leads, groundingLinks } = await discoverLeads(state.location));
+      }
 
-      setState(prev => ({
-        ...prev,
-        leads,
-        groundingLinks,
-        isLoading: false
-      }));
+      setState(prev => ({ ...prev, leads, groundingLinks, isLoading: false }));
+      setDiscoveryProgress(null);
     } catch (err: any) {
       setState(prev => ({
         ...prev,
         isLoading: false,
         error: err.message || 'The search encountered an error. Please try again.'
       }));
+      setDiscoveryProgress(null);
     }
   };
 
@@ -267,7 +286,7 @@ const App: React.FC = () => {
                 <p className="text-[10px] text-indigo-500 mt-0.5 font-bold uppercase tracking-widest leading-none">Sales Discovery Engine</p>
               </div>
             </div>
-            <form onSubmit={handleSearch} className="flex-1 max-w-2xl mx-6 flex gap-2">
+            <form onSubmit={handleSearch} className="flex-1 max-w-2xl mx-6 flex gap-2 items-center">
               <input
                 type="text"
                 placeholder="Enter City, State or Zip Code..."
@@ -275,6 +294,24 @@ const App: React.FC = () => {
                 value={state.location}
                 onChange={(e) => setState(prev => ({ ...prev, location: e.target.value }))}
               />
+              <div className="flex rounded-xl overflow-hidden border border-slate-200 text-xs font-bold shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('standard')}
+                  title="Single search pass"
+                  className={`px-3 py-2.5 transition-all ${searchMode === 'standard' ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+                >
+                  Standard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('deep')}
+                  title="Searches every zip code in the city for more leads"
+                  className={`px-3 py-2.5 border-l border-slate-200 transition-all ${searchMode === 'deep' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+                >
+                  Deep Scan
+                </button>
+              </div>
               <button type="submit" disabled={state.isLoading} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-all whitespace-nowrap">
                 {state.isLoading ? 'Finding...' : 'Find Leads'}
               </button>
@@ -364,10 +401,36 @@ const App: React.FC = () => {
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                 {state.isLoading ? (
-                   <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                      <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
-                      <p className="text-xs font-medium">{loadingStep}</p>
-                   </div>
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400 px-6">
+                    <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
+                    <p className="text-xs font-medium text-center">{loadingStep}</p>
+                    {discoveryProgress && discoveryProgress.phase === 'scanning' && discoveryProgress.total > 0 && (
+                      <div className="w-full mt-4">
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                          <div
+                            className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.round((discoveryProgress.current / discoveryProgress.total) * 100)}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1.5 text-center">
+                          {discoveryProgress.currentZip && `Scanning zip ${discoveryProgress.currentZip}`}
+                        </p>
+                      </div>
+                    )}
+                    {discoveryProgress && discoveryProgress.phase === 'geocoding' && discoveryProgress.total > 0 && (
+                      <div className="w-full mt-4">
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                          <div
+                            className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.round((discoveryProgress.current / discoveryProgress.total) * 100)}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1.5 text-center">
+                          Geocoding {discoveryProgress.current} of {discoveryProgress.total} sites
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 ) : state.leads.length === 0 ? (
                   <div className="text-center py-20 text-slate-300 px-6">
                     <p className="text-xs font-bold uppercase tracking-widest mb-2">Search to begin</p>
