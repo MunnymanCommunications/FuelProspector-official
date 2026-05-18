@@ -554,7 +554,8 @@ export const discoverLeadsEnhanced = async (
     return discoverLeads(location, userCoords);
   }
 
-  // Phase 1: scan each zip code, 5 concurrent
+  // Phase 1: scan each zip code, 5 concurrent with a 1s gap between batches
+  // to stay within Gemini rate limits on both free and paid tiers
   const allRawSites: Array<{ name: string; address: string; brand?: string }> = [];
   const concurrency = 5;
 
@@ -569,6 +570,10 @@ export const discoverLeadsEnhanced = async (
     for (const result of batchResults) {
       allRawSites.push(...result.sites);
       allGroundingLinks.push(...result.groundingLinks);
+    }
+
+    if (i + concurrency < zipCodes.length) {
+      await new Promise(res => setTimeout(res, 1000));
     }
   }
 

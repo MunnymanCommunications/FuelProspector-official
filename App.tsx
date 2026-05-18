@@ -406,15 +406,16 @@ const App: React.FC = () => {
                     <p className="text-xs font-medium text-center">{loadingStep}</p>
                     {discoveryProgress && discoveryProgress.phase === 'scanning' && discoveryProgress.total > 0 && (
                       <div className="w-full mt-4">
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                          <span>{discoveryProgress.currentZip && `Zip ${discoveryProgress.currentZip}`}</span>
+                          <span>~{Math.ceil(((discoveryProgress.total - discoveryProgress.current) / 5) * 1.2)}s left</span>
+                        </div>
                         <div className="w-full bg-slate-100 rounded-full h-2">
                           <div
                             className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
                             style={{ width: `${Math.round((discoveryProgress.current / discoveryProgress.total) * 100)}%` }}
                           />
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-1.5 text-center">
-                          {discoveryProgress.currentZip && `Scanning zip ${discoveryProgress.currentZip}`}
-                        </p>
                       </div>
                     )}
                     {discoveryProgress && discoveryProgress.phase === 'geocoding' && discoveryProgress.total > 0 && (
