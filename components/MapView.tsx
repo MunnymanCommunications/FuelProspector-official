@@ -21,15 +21,21 @@ const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; ln
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 };
 
-// Load the Google Maps JS API once; resolves immediately if already loaded.
-// Uses the JS SDK (not the REST API) to avoid CORS issues in browser environments.
-// loading=async suppresses the "loaded without loading=async" performance warning.
+// Load the Google Maps JS API once and ensure the directions library is imported.
+// loading=async requires explicit importLibrary("directions") before DirectionsService
+// is available as a constructor — the global google.maps object alone is not enough.
 const loadMapsJsApi = (apiKey: string): Promise<void> => {
+  const importDirections = () =>
+    (window as any).google.maps.importLibrary('directions').then(() => Promise.resolve());
+
   return new Promise((resolve, reject) => {
-    if ((window as any).google?.maps) { resolve(); return; }
+    if ((window as any).google?.maps?.importLibrary) {
+      importDirections().then(resolve).catch(reject);
+      return;
+    }
     const existing = document.getElementById('gmap-sdk');
     if (existing) {
-      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('load', () => importDirections().then(resolve).catch(reject));
       existing.addEventListener('error', () => reject(new Error('Maps JS API failed to load')));
       return;
     }
@@ -37,7 +43,7 @@ const loadMapsJsApi = (apiKey: string): Promise<void> => {
     script.id = 'gmap-sdk';
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
     script.async = true;
-    script.onload = () => resolve();
+    script.onload = () => importDirections().then(resolve).catch(reject);
     script.onerror = () => reject(new Error('Maps JS API failed to load'));
     document.head.appendChild(script);
   });
