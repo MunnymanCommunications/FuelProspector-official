@@ -242,7 +242,12 @@ const App: React.FC = () => {
       return {
         ...prev,
         leads: prev.leads.filter(l => !l.numLocations || l.numLocations <= 20),
-        route: prev.route.filter(l => !l.numLocations || l.numLocations <= 20)
+        // Route entries are pre-enrichment snapshots — look up numLocations from current leads
+        route: prev.route.filter(r => {
+          const lead = prev.leads.find(l => l.id === r.id);
+          const num = lead?.numLocations ?? r.numLocations;
+          return !num || num <= 20;
+        })
       };
     });
   }, []);
@@ -267,7 +272,7 @@ const App: React.FC = () => {
   // Always resolve route entries from state.leads so enrichment that happened AFTER
   // Smart Route was clicked is reflected in the print report and route card.
   const currentItinerary = state.route.length > 0
-    ? state.route.map(r => state.leads.find(l => l.id === r.id) || r)
+    ? state.route.map(r => state.leads.find(l => l.id === r.id)).filter((l): l is GasStationLead => !!l)
     : state.leads;
   const unenrichedCount = state.leads.filter(l => !l.isEnriched).length;
   const enrichedCount = state.leads.filter(l => l.isEnriched).length;
