@@ -44,13 +44,17 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
     1. Identify brands like "Stop & Save", "Quick-Stop", and other non-national entities.
     2. For every brand found, you MUST list the physical address of EVERY location they have in this area.
     3. Include "mom-and-pop" standalone stations.
-    4. Exclude major national chains (Shell, Exxon, BP, etc.).
+    4. Exclude major national chains (Shell, Exxon, BP, Chevron, Mobil, Marathon, Sunoco, Circle K, Speedway, Wawa, QuikTrip, Casey's, etc.).
+
+    CRITICAL FIELD RULES — read carefully:
+    - "name": The BUSINESS NAME ONLY as it appears on the sign or Google Maps listing (e.g. "Wally's Corner Fuel", "Stop & Save"). NEVER put a street address in this field.
+    - "address": The FULL STREET ADDRESS ONLY (e.g. "123 Main St, Columbus, OH 43201"). Never put the business name here.
 
     OUTPUT FORMAT (REQUIRED):
     Return ONLY a raw JSON array. No prose, no markdown fences, no explanation.
     Each element must be an object with exactly these keys:
-      "name"    (string, required)
-      "address" (string, required)
+      "name"    (string, required - business name, never an address)
+      "address" (string, required - street address only)
       "brand"   (string, optional)
 
     Example: [{"name":"Stop & Save","address":"123 Main St, City, ST","brand":"Stop & Save"}]
@@ -72,10 +76,22 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
     throw new Error(`Phase 1 (Discovery) failed: ${error.message}`);
   }
 
-  const discoveredSites = parseGroundedJson<Array<{ name: string; address: string; brand?: string }>>(
+  const rawSites = parseGroundedJson<Array<{ name: string; address: string; brand?: string }>>(
     discoveryResponse.text,
     []
   );
+
+  // Detect entries where Gemini put an address string in the "name" field (contains ", ST" or a zip code)
+  const addressPattern = /,\s*[A-Z]{2}\b/;
+  const discoveredSites = rawSites.filter(s => s.name && s.address).map(s => {
+    if (addressPattern.test(s.name) || /\b\d{5}\b/.test(s.name)) {
+      console.warn(`[FuelProspector] Address-as-name corrected: "${s.name}"`);
+      const fixedName = (s.brand && !addressPattern.test(s.brand)) ? s.brand : 'Independent Station';
+      return { ...s, name: fixedName };
+    }
+    return s;
+  });
+
   console.log('[FuelProspector] Phase 1 discovered sites:', discoveredSites.length);
   if (discoveredSites.length === 0 && discoveryResponse.text) {
     console.warn('[FuelProspector] Phase 1 returned text but parsed to 0 sites. Raw:', discoveryResponse.text.substring(0, 500));

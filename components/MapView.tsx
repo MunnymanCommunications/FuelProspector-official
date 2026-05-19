@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import 'leaflet-routing-machine';
 import { GasStationLead } from '../types';
 
 interface MapViewProps {
@@ -10,11 +9,22 @@ interface MapViewProps {
   onRouteCalculated?: (summary: { distance: number; time: number }) => void;
 }
 
+// Straight-line distance in miles between two lat/lng points
+const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; lng: number }): number => {
+  const R = 3958.8;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+
 const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCalculated }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
-  const routingControlRef = useRef<any>(null);
+  const routeLineRef = useRef<any>(null);
 
   useEffect(() => {
     if (!mapRef.current && mapContainerRef.current) {
@@ -50,6 +60,7 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
     });
   };
 
+  // Re-render all markers whenever leads or route ordering changes
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -59,7 +70,9 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
     if (leads.length > 0) {
       const group = L.featureGroup();
       leads.forEach(lead => {
-        const colorClass = lead.confidence === 'high' ? 'marker-high' : lead.confidence === 'medium' ? 'marker-medium' : 'marker-low';
+        const colorClass =
+          lead.confidence === 'high' ? 'marker-high' :
+          lead.confidence === 'medium' ? 'marker-medium' : 'marker-low';
         const routeIdx = route.findIndex(r => r.id === lead.id);
         const label = routeIdx !== -1 ? (routeIdx + 1).toString() : undefined;
 
@@ -72,7 +85,7 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
             </div>
           `)
           .on('click', () => onSelectLead(lead));
-        
+
         markersRef.current.push(marker);
         group.addLayer(marker);
       });
@@ -83,45 +96,49 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
     }
   }, [leads, route, onSelectLead]);
 
+  // Draw route polyline — no external routing service, works for any number of stops
   useEffect(() => {
     if (!mapRef.current) return;
 
-    if (routingControlRef.current) {
-      mapRef.current.removeControl(routingControlRef.current);
-      routingControlRef.current = null;
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
     }
 
     if (route.length > 1) {
-      const waypoints = route.map(l => L.latLng(l.lat, l.lng));
-      
-      routingControlRef.current = L.Routing.control({
-        waypoints,
-        routeWhileDragging: false,
-        addWaypoints: false,
-        draggableWaypoints: false,
-        fitSelectedRoutes: true,
-        show: false,
-        lineOptions: {
-          styles: [{ color: '#6366f1', opacity: 0.8, weight: 6 }]
-        },
-        createMarker: () => null
+      const latlngs = route.map(l => L.latLng(l.lat, l.lng));
+      const polyline = L.polyline(latlngs, {
+        color: '#6366f1',
+        opacity: 0.85,
+        weight: 5,
+        dashArray: '10, 7'
       }).addTo(mapRef.current);
 
-      routingControlRef.current.on('routesfound', (e: any) => {
-        const routes = e.routes;
-        const summary = routes[0].summary;
-        if (onRouteCalculated) {
-          onRouteCalculated({
-            // Convert meters to miles
-            distance: summary.totalDistance * 0.000621371, 
-            time: summary.totalTime / 60
-          });
+      routeLineRef.current = polyline;
+      mapRef.current.fitBounds(polyline.getBounds(), { padding: [60, 60] });
+
+      if (onRouteCalculated) {
+        let totalMiles = 0;
+        for (let i = 0; i < route.length - 1; i++) {
+          totalMiles += haversineDistance(
+            { lat: route[i].lat, lng: route[i].lng },
+            { lat: route[i + 1].lat, lng: route[i + 1].lng }
+          );
         }
-      });
+        onRouteCalculated({
+          distance: totalMiles,
+          time: (totalMiles / 25) * 60  // 25 mph city avg → minutes
+        });
+      }
     }
   }, [route, onRouteCalculated]);
 
-  return <div ref={mapContainerRef} className="w-full h-full rounded-2xl shadow-xl border-4 border-white overflow-hidden relative" />;
+  return (
+    <div
+      ref={mapContainerRef}
+      className="w-full h-full rounded-2xl shadow-xl border-4 border-white overflow-hidden relative"
+    />
+  );
 };
 
 export default MapView;
