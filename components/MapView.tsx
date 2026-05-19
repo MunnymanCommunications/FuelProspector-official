@@ -23,9 +23,10 @@ const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; ln
 
 // Load the Google Maps JS API once; resolves immediately if already loaded.
 // Uses the JS SDK (not the REST API) to avoid CORS issues in browser environments.
+// loading=async suppresses the "loaded without loading=async" performance warning.
 const loadMapsJsApi = (apiKey: string): Promise<void> => {
   return new Promise((resolve, reject) => {
-    if ((window as any).google?.maps?.DirectionsService) { resolve(); return; }
+    if ((window as any).google?.maps) { resolve(); return; }
     const existing = document.getElementById('gmap-sdk');
     if (existing) {
       existing.addEventListener('load', () => resolve());
@@ -34,7 +35,7 @@ const loadMapsJsApi = (apiKey: string): Promise<void> => {
     }
     const script = document.createElement('script');
     script.id = 'gmap-sdk';
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
     script.async = true;
     script.onload = () => resolve();
     script.onerror = () => reject(new Error('Maps JS API failed to load'));
