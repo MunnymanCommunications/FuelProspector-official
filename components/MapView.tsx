@@ -7,9 +7,26 @@ interface MapViewProps {
   route: GasStationLead[];
   onSelectLead: (lead: GasStationLead) => void;
   onRouteCalculated?: (summary: { distance: number; time: number }) => void;
+  mapsApiKey?: string;
 }
 
-// Straight-line distance in miles between two lat/lng points
+// Decode a Google Maps encoded polyline into Leaflet LatLng points
+const decodePolyline = (encoded: string): L.LatLng[] => {
+  const points: L.LatLng[] = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let b, shift = 0, result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 32);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 32);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    points.push(L.latLng(lat / 1e5, lng / 1e5));
+  }
+  return points;
+};
+
+// Straight-line distance in miles (fallback when no Maps API key)
 const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; lng: number }): number => {
   const R = 3958.8;
   const dLat = (b.lat - a.lat) * Math.PI / 180;
@@ -20,7 +37,64 @@ const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; ln
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 };
 
-const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCalculated }) => {
+// Call the Google Maps Directions API in batches of 25 stops (origin + 23 waypoints + destination).
+// Each batch's destination becomes the next batch's origin so the segments stitch together seamlessly.
+const fetchDirectionsRoute = async (
+  leads: GasStationLead[],
+  apiKey: string
+): Promise<{ latlngs: L.LatLng[]; distanceMiles: number; durationMinutes: number }> => {
+  const MAX_WAYPOINTS = 23;
+  const BATCH_SIZE = MAX_WAYPOINTS + 2; // 25 total stops per request
+
+  const allLatlngs: L.LatLng[] = [];
+  let totalDistanceMeters = 0;
+  let totalDurationSeconds = 0;
+
+  let i = 0;
+  while (i < leads.length - 1) {
+    const batchEnd = Math.min(i + BATCH_SIZE - 1, leads.length - 1);
+    const batch = leads.slice(i, batchEnd + 1);
+
+    const origin = `${batch[0].lat},${batch[0].lng}`;
+    const destination = `${batch[batch.length - 1].lat},${batch[batch.length - 1].lng}`;
+    const intermediates = batch.slice(1, -1);
+    const waypointsParam = intermediates.length > 0
+      ? `&waypoints=${intermediates.map(l => `${l.lat},${l.lng}`).join('|')}`
+      : '';
+
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}${waypointsParam}&key=${apiKey}`;
+
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Maps API HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.status !== 'OK') {
+      throw new Error(`Directions API: ${data.status}${data.error_message ? ` — ${data.error_message}` : ''}`);
+    }
+
+    const mapsRoute = data.routes[0];
+    const points = decodePolyline(mapsRoute.overview_polyline.points);
+
+    // Skip the first point on subsequent batches — it duplicates the previous batch's last point
+    if (allLatlngs.length > 0 && points.length > 0) points.shift();
+    allLatlngs.push(...points);
+
+    for (const leg of mapsRoute.legs) {
+      totalDistanceMeters += leg.distance.value;
+      totalDurationSeconds += leg.duration.value;
+    }
+
+    i = batchEnd;
+  }
+
+  return {
+    latlngs: allLatlngs,
+    distanceMiles: totalDistanceMeters * 0.000621371,
+    durationMinutes: totalDurationSeconds / 60
+  };
+};
+
+const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCalculated, mapsApiKey }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -80,7 +154,7 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
           .addTo(mapRef.current)
           .bindPopup(`
             <div class="p-1">
-              <strong class="text-indigo-600">${lead.name}</strong><br/>
+              <strong class="text-red-600">${lead.name}</strong><br/>
               <span class="text-xs text-slate-500">${lead.address}</span>
             </div>
           `)
@@ -96,7 +170,7 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
     }
   }, [leads, route, onSelectLead]);
 
-  // Draw route polyline — no external routing service, works for any number of stops
+  // Draw route — uses Google Maps Directions API when key is available, Haversine polyline as fallback
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -105,33 +179,42 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
       routeLineRef.current = null;
     }
 
-    if (route.length > 1) {
-      const latlngs = route.map(l => L.latLng(l.lat, l.lng));
+    if (route.length < 2) return;
+
+    const drawPolyline = (latlngs: L.LatLng[], solid: boolean) => {
       const polyline = L.polyline(latlngs, {
-        color: '#6366f1',
+        color: '#dc2626',
         opacity: 0.85,
         weight: 5,
-        dashArray: '10, 7'
+        dashArray: solid ? undefined : '10, 7'
       }).addTo(mapRef.current);
-
       routeLineRef.current = polyline;
       mapRef.current.fitBounds(polyline.getBounds(), { padding: [60, 60] });
+    };
 
-      if (onRouteCalculated) {
-        let totalMiles = 0;
-        for (let i = 0; i < route.length - 1; i++) {
-          totalMiles += haversineDistance(
-            { lat: route[i].lat, lng: route[i].lng },
-            { lat: route[i + 1].lat, lng: route[i + 1].lng }
-          );
-        }
-        onRouteCalculated({
-          distance: totalMiles,
-          time: (totalMiles / 25) * 60  // 25 mph city avg → minutes
-        });
+    const fallbackHaversine = () => {
+      drawPolyline(route.map(l => L.latLng(l.lat, l.lng)), false);
+      let totalMiles = 0;
+      for (let i = 0; i < route.length - 1; i++) {
+        totalMiles += haversineDistance(route[i], route[i + 1]);
       }
+      onRouteCalculated?.({ distance: totalMiles, time: (totalMiles / 25) * 60 });
+    };
+
+    if (mapsApiKey) {
+      fetchDirectionsRoute(route, mapsApiKey)
+        .then(({ latlngs, distanceMiles, durationMinutes }) => {
+          drawPolyline(latlngs, true);
+          onRouteCalculated?.({ distance: distanceMiles, time: durationMinutes });
+        })
+        .catch(err => {
+          console.error('[FuelProspector] Directions API failed, using Haversine fallback:', err.message);
+          fallbackHaversine();
+        });
+    } else {
+      fallbackHaversine();
     }
-  }, [route, onRouteCalculated]);
+  }, [route, onRouteCalculated, mapsApiKey]);
 
   return (
     <div

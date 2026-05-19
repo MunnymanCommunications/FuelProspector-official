@@ -205,6 +205,14 @@ const App: React.FC = () => {
     }));
   }, []);
 
+  const handleFilterLargeChains = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      leads: prev.leads.filter(l => !l.numLocations || l.numLocations <= 20),
+      route: prev.route.filter(l => !l.numLocations || l.numLocations <= 20)
+    }));
+  }, []);
+
   const handleExportAll = () => {
     const csvContent = "data:text/csv;charset=utf-8,"
       + ["Company,Address,Owner,Scale,Phone,Email,Website"].concat(
@@ -216,9 +224,15 @@ const App: React.FC = () => {
     link.click();
   };
 
-  const currentItinerary = state.route.length > 0 ? state.route : state.leads;
+  // Always resolve route entries from state.leads so enrichment that happened AFTER
+  // Smart Route was clicked is reflected in the print report and route card.
+  const currentItinerary = state.route.length > 0
+    ? state.route.map(r => state.leads.find(l => l.id === r.id) || r)
+    : state.leads;
   const unenrichedCount = state.leads.filter(l => !l.isEnriched).length;
   const enrichedCount = state.leads.filter(l => l.isEnriched).length;
+  // Show the chain filter button only once enriched leads with scale > 20 exist
+  const hasLargeChains = state.leads.some(l => l.isEnriched && l.numLocations && l.numLocations > 20);
 
   if (!isAuthorized) {
     return (
@@ -386,7 +400,7 @@ const App: React.FC = () => {
 
                 {/* Enrichment status summary */}
                 {state.leads.length > 0 && (
-                  <div className="flex gap-2 mt-2 text-xs">
+                  <div className="flex gap-2 mt-2 text-xs flex-wrap">
                     <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full font-bold">
                       {enrichedCount} enriched
                     </span>
@@ -396,6 +410,17 @@ const App: React.FC = () => {
                       </span>
                     )}
                   </div>
+                )}
+
+                {/* Chain size filter — only shown once enriched leads with 20+ locations exist */}
+                {hasLargeChains && (
+                  <button
+                    onClick={handleFilterLargeChains}
+                    className="w-full mt-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 py-2 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                    title="Remove chains with 20+ locations — keeps small independents only"
+                  >
+                    🚫 Filter Chains (20+ locations)
+                  </button>
                 )}
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
@@ -452,7 +477,7 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex-1 relative bg-[#E2E8F0]">
-              <MapView leads={state.leads} route={state.route} onSelectLead={() => {}} onRouteCalculated={setRouteStats} />
+              <MapView leads={state.leads} route={state.route} onSelectLead={() => {}} onRouteCalculated={setRouteStats} mapsApiKey={process.env.MAPS_API} />
               {routeStats && (
                 <div className="absolute bottom-8 left-8 z-20 bg-white p-6 rounded-2xl shadow-2xl border border-indigo-50 min-w-[300px]">
                   <div className="flex justify-between mb-4">
@@ -510,7 +535,7 @@ const App: React.FC = () => {
             </header>
 
             <div className="mb-10 h-[4in] border-2 border-slate-200 rounded-2xl overflow-hidden relative print:h-[3.5in]">
-              <MapView leads={state.leads} route={state.route} onSelectLead={() => {}} />
+              <MapView leads={state.leads} route={state.route} onSelectLead={() => {}} mapsApiKey={process.env.MAPS_API} />
             </div>
 
             <div className="space-y-8">
