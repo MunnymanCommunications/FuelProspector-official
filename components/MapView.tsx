@@ -10,22 +10,6 @@ interface MapViewProps {
   mapsApiKey?: string;
 }
 
-// Decode a Google Maps encoded polyline into Leaflet LatLng points
-const decodePolyline = (encoded: string): L.LatLng[] => {
-  const points: L.LatLng[] = [];
-  let index = 0, lat = 0, lng = 0;
-  while (index < encoded.length) {
-    let b, shift = 0, result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 32);
-    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
-    shift = 0; result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 32);
-    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
-    points.push(L.latLng(lat / 1e5, lng / 1e5));
-  }
-  return points;
-};
-
 // Straight-line distance in miles (fallback when no Maps API key)
 const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; lng: number }): number => {
   const R = 3958.8;
@@ -37,14 +21,38 @@ const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; ln
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 };
 
-// Call the Google Maps Directions API in batches of 25 stops (origin + 23 waypoints + destination).
-// Each batch's destination becomes the next batch's origin so the segments stitch together seamlessly.
+// Load the Google Maps JS API once; resolves immediately if already loaded.
+// Uses the JS SDK (not the REST API) to avoid CORS issues in browser environments.
+const loadMapsJsApi = (apiKey: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if ((window as any).google?.maps?.DirectionsService) { resolve(); return; }
+    const existing = document.getElementById('gmap-sdk');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('Maps JS API failed to load')));
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'gmap-sdk';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Maps JS API failed to load'));
+    document.head.appendChild(script);
+  });
+};
+
+// Uses the Maps JS API DirectionsService (browser-native, no CORS issues).
+// Batched at 25 stops (origin + 23 waypoints + destination); segments are stitched end-to-end.
 const fetchDirectionsRoute = async (
   leads: GasStationLead[],
   apiKey: string
 ): Promise<{ latlngs: L.LatLng[]; distanceMiles: number; durationMinutes: number }> => {
+  await loadMapsJsApi(apiKey);
+
+  const ds = new (window as any).google.maps.DirectionsService();
   const MAX_WAYPOINTS = 23;
-  const BATCH_SIZE = MAX_WAYPOINTS + 2; // 25 total stops per request
+  const BATCH_SIZE = MAX_WAYPOINTS + 2;
 
   const allLatlngs: L.LatLng[] = [];
   let totalDistanceMeters = 0;
@@ -55,25 +63,26 @@ const fetchDirectionsRoute = async (
     const batchEnd = Math.min(i + BATCH_SIZE - 1, leads.length - 1);
     const batch = leads.slice(i, batchEnd + 1);
 
-    const origin = `${batch[0].lat},${batch[0].lng}`;
-    const destination = `${batch[batch.length - 1].lat},${batch[batch.length - 1].lng}`;
-    const intermediates = batch.slice(1, -1);
-    const waypointsParam = intermediates.length > 0
-      ? `&waypoints=${intermediates.map(l => `${l.lat},${l.lng}`).join('|')}`
-      : '';
+    const waypoints = batch.slice(1, -1).map((l: GasStationLead) => ({
+      location: { lat: l.lat, lng: l.lng },
+      stopover: true
+    }));
 
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}${waypointsParam}&key=${apiKey}`;
+    const result = await new Promise<any>((resolve, reject) => {
+      ds.route({
+        origin: { lat: batch[0].lat, lng: batch[0].lng },
+        destination: { lat: batch[batch.length - 1].lat, lng: batch[batch.length - 1].lng },
+        waypoints,
+        travelMode: 'DRIVING'
+      }, (res: any, status: any) => {
+        if (status === 'OK') resolve(res);
+        else reject(new Error(`Directions API: ${status}`));
+      });
+    });
 
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`Maps API HTTP ${resp.status}`);
-    const data = await resp.json();
-
-    if (data.status !== 'OK') {
-      throw new Error(`Directions API: ${data.status}${data.error_message ? ` — ${data.error_message}` : ''}`);
-    }
-
-    const mapsRoute = data.routes[0];
-    const points = decodePolyline(mapsRoute.overview_polyline.points);
+    const mapsRoute = result.routes[0];
+    // overview_path is an array of google.maps.LatLng — convert directly to Leaflet LatLng
+    const points: L.LatLng[] = mapsRoute.overview_path.map((p: any) => L.latLng(p.lat(), p.lng()));
 
     // Skip the first point on subsequent batches — it duplicates the previous batch's last point
     if (allLatlngs.length > 0 && points.length > 0) points.shift();
@@ -170,7 +179,7 @@ const MapView: React.FC<MapViewProps> = ({ leads, route, onSelectLead, onRouteCa
     }
   }, [leads, route, onSelectLead]);
 
-  // Draw route — uses Google Maps Directions API when key is available, Haversine polyline as fallback
+  // Draw route — uses Google Maps JS API DirectionsService when key is available, Haversine polyline as fallback
   useEffect(() => {
     if (!mapRef.current) return;
 

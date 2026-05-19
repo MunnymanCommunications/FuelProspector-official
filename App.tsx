@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [searchMode, setSearchMode] = useState<'standard' | 'deep'>('standard');
   const [discoveryProgress, setDiscoveryProgress] = useState<DiscoveryProgress | null>(null);
+  const [filterUndo, setFilterUndo] = useState<{ leads: GasStationLead[]; route: GasStationLead[] } | null>(null);
 
   const handlePinSubmit = (digit?: string) => {
     const newPin = digit !== undefined ? pin + digit : pin;
@@ -206,12 +207,21 @@ const App: React.FC = () => {
   }, []);
 
   const handleFilterLargeChains = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      leads: prev.leads.filter(l => !l.numLocations || l.numLocations <= 20),
-      route: prev.route.filter(l => !l.numLocations || l.numLocations <= 20)
-    }));
+    setState(prev => {
+      setFilterUndo({ leads: prev.leads, route: prev.route });
+      return {
+        ...prev,
+        leads: prev.leads.filter(l => !l.numLocations || l.numLocations <= 20),
+        route: prev.route.filter(l => !l.numLocations || l.numLocations <= 20)
+      };
+    });
   }, []);
+
+  const handleUndoFilter = useCallback(() => {
+    if (!filterUndo) return;
+    setState(prev => ({ ...prev, leads: filterUndo.leads, route: filterUndo.route }));
+    setFilterUndo(null);
+  }, [filterUndo]);
 
   const handleExportAll = () => {
     const csvContent = "data:text/csv;charset=utf-8,"
@@ -420,6 +430,15 @@ const App: React.FC = () => {
                     title="Remove chains with 20+ locations — keeps small independents only"
                   >
                     🚫 Filter Chains (20+ locations)
+                  </button>
+                )}
+                {filterUndo && !hasLargeChains && (
+                  <button
+                    onClick={handleUndoFilter}
+                    className="w-full mt-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 py-2 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                    title="Restore the leads that were just filtered out"
+                  >
+                    ↩ Undo Filter
                   </button>
                 )}
               </div>
