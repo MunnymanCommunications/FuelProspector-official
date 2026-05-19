@@ -30,6 +30,7 @@ const App: React.FC = () => {
   const [searchMode, setSearchMode] = useState<'standard' | 'deep'>('standard');
   const [discoveryProgress, setDiscoveryProgress] = useState<DiscoveryProgress | null>(null);
   const [filterUndo, setFilterUndo] = useState<{ leads: GasStationLead[]; route: GasStationLead[] } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const handlePinSubmit = (digit?: string) => {
     const newPin = digit !== undefined ? pin + digit : pin;
@@ -60,28 +61,33 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, isLoading: true, error: null, leads: [], route: [], enrichmentProgress: null }));
     setRouteStats(null);
     setDiscoveryProgress(null);
+    setSelectedIds(new Set());
 
     try {
       let leads, groundingLinks;
 
       if (searchMode === 'deep') {
-        setLoadingStep('Deep Scan: Fetching zip codes...');
+        setLoadingStep(`Mapping service territory — retrieving zip codes for ${state.location}...`);
         ({ leads, groundingLinks } = await discoverLeadsEnhanced(
           state.location,
           undefined,
           (progress: DiscoveryProgress) => {
             setDiscoveryProgress(progress);
             if (progress.phase === 'fetching-zips') {
-              setLoadingStep('Deep Scan: Fetching zip codes...');
+              setLoadingStep(`Mapping service territory — retrieving zip codes for ${state.location}...`);
             } else if (progress.phase === 'scanning') {
-              setLoadingStep(`Deep Scan: Scanning zip codes (${progress.current}/${progress.total})...`);
+              setLoadingStep(
+                progress.currentZip
+                  ? `Deploying AI Research Agent to zip code ${progress.currentZip}...`
+                  : `AI Research Agents scanning territory (${progress.current} of ${progress.total} zones complete)...`
+              );
             } else if (progress.phase === 'geocoding') {
-              setLoadingStep(`Deep Scan: Geocoding ${progress.total} discovered sites...`);
+              setLoadingStep(`Cross-referencing ${progress.total} discovered sites — building lead list...`);
             }
           }
         ));
       } else {
-        setLoadingStep('Discovering gas stations in ' + state.location + '...');
+        setLoadingStep(`AI Research Agent scanning ${state.location} for independent stations...`);
         ({ leads, groundingLinks } = await discoverLeads(state.location));
       }
 
@@ -204,7 +210,31 @@ const App: React.FC = () => {
       leads: prev.leads.filter(l => l.id !== leadId),
       route: prev.route.filter(l => l.id !== leadId)
     }));
+    setSelectedIds(prev => { const next = new Set(prev); next.delete(leadId); return next; });
   }, []);
+
+  const handleToggleSelect = useCallback((leadId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(leadId) ? next.delete(leadId) : next.add(leadId);
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedIds(new Set(state.leads.map(l => l.id)));
+  }, [state.leads]);
+
+  const handleDeselectAll = useCallback(() => setSelectedIds(new Set()), []);
+
+  const handleDeleteSelected = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      leads: prev.leads.filter(l => !selectedIds.has(l.id)),
+      route: prev.route.filter(l => !selectedIds.has(l.id))
+    }));
+    setSelectedIds(new Set());
+  }, [selectedIds]);
 
   const handleFilterLargeChains = useCallback(() => {
     setState(prev => {
@@ -442,6 +472,29 @@ const App: React.FC = () => {
                   </button>
                 )}
               </div>
+              {/* Multi-select action bar — visible when leads exist and not loading */}
+              {!state.isLoading && state.leads.length > 0 && (
+                <div className="px-4 pb-2 flex items-center gap-2">
+                  <button
+                    onClick={selectedIds.size === state.leads.length ? handleDeselectAll : handleSelectAll}
+                    className="text-[10px] font-bold text-slate-500 hover:text-slate-800 transition-colors"
+                  >
+                    {selectedIds.size === state.leads.length ? '☑ Deselect All' : '☐ Select All'}
+                  </button>
+                  {selectedIds.size > 0 && (
+                    <>
+                      <span className="text-slate-300 text-xs">|</span>
+                      <span className="text-[10px] text-slate-500 font-medium">{selectedIds.size} selected</span>
+                      <button
+                        onClick={handleDeleteSelected}
+                        className="ml-auto text-[10px] font-bold bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg transition-colors"
+                      >
+                        🗑️ Delete Selected
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                 {state.isLoading ? (
                   <div className="flex flex-col items-center justify-center py-16 text-slate-400 px-6">
@@ -450,8 +503,8 @@ const App: React.FC = () => {
                     {discoveryProgress && discoveryProgress.phase === 'scanning' && discoveryProgress.total > 0 && (
                       <div className="w-full mt-4">
                         <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                          <span>{discoveryProgress.currentZip && `Zip ${discoveryProgress.currentZip}`}</span>
-                          <span>~{Math.ceil(((discoveryProgress.total - discoveryProgress.current) / 5) * 1.2)}s left</span>
+                          <span>{discoveryProgress.currentZip && `Zone ${discoveryProgress.currentZip}`}</span>
+                          <span>~{Math.max(1, Math.ceil(((discoveryProgress.total - discoveryProgress.current) / 5) * 1.2 / 60))} min left</span>
                         </div>
                         <div className="w-full bg-slate-100 rounded-full h-2">
                           <div
@@ -489,6 +542,8 @@ const App: React.FC = () => {
                       onExport={() => {}}
                       onEnrich={() => handleEnrichSingle(lead.id)}
                       onDelete={() => handleDeleteLead(lead.id)}
+                      isSelected={selectedIds.has(lead.id)}
+                      onToggleSelect={() => handleToggleSelect(lead.id)}
                     />
                   ))
                 )}
