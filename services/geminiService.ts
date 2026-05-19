@@ -532,20 +532,14 @@ export const optimizeRouteOrder = async (
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `
-    TASK: Sequence these gas station leads to create the SHORTEST possible driving distance.
-    START POINT: ${userCoords ? `Coordinates (${userCoords.lat}, ${userCoords.lng})` : startLocation}
+  const prompt = `OUTPUT FORMAT: Respond with ONLY a comma-separated list of integers. No words, no explanation, no punctuation other than commas. Example: 3,1,4,2,5
 
-    LEADS TO SEQUENCE (numbered 1 through ${leads.length}):
-    ${leads.map((l, i) => `${i + 1}. ${l.name} | ${l.address} | LatLng: ${l.lat},${l.lng}`).join('\n')}
+TASK: Order these ${leads.length} gas station stops for the shortest driving route starting from ${userCoords ? `(${userCoords.lat}, ${userCoords.lng})` : startLocation}. Use nearest-neighbor logic to minimize backtracking.
 
-    INSTRUCTIONS:
-    1. Calculate the most logical "next-nearest-neighbor" route from the start point.
-    2. Minimize backtracking.
-    3. Return ONLY a comma-separated list of the position numbers in optimized order.
-       Example for 5 leads: 3,1,4,2,5
-       Do NOT return names, addresses, or any other text. Just the numbers.
-  `;
+STOPS (use their number in your output):
+${leads.map((l, i) => `${i + 1}. ${l.name} — ${l.address} — (${l.lat},${l.lng})`).join('\n')}
+
+Respond with ONLY the comma-separated numbers, nothing else:`;
 
   try {
     const response = await ai.models.generateContent({
