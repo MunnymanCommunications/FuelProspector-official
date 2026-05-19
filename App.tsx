@@ -224,7 +224,7 @@ const App: React.FC = () => {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-slate-900 overflow-hidden font-sans">
         <div className={`w-full max-w-md p-8 flex flex-col items-center transition-all duration-300 ${pinError ? 'translate-x-2 animate-shake' : ''}`}>
-          <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-2xl mb-8">F</div>
+          <div className="bg-red-600 w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-2xl mb-8">F</div>
           <h1 className="text-white text-2xl font-bold mb-2">FuelProspector AI</h1>
           <p className="text-slate-400 text-sm mb-12">Enter 4-digit access pin</p>
 
@@ -233,7 +233,7 @@ const App: React.FC = () => {
               <div
                 key={i}
                 className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
-                  pin.length > i ? 'bg-indigo-500 border-indigo-500 scale-125' : 'border-slate-700'
+                  pin.length > i ? 'bg-red-500 border-indigo-500 scale-125' : 'border-slate-700'
                 }`}
               />
             ))}
@@ -279,7 +279,7 @@ const App: React.FC = () => {
         <>
           <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm no-print">
             <div className="flex items-center gap-3">
-              <div className="bg-indigo-600 w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-200">F</div>
+              <div className="bg-red-600 w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-200">F</div>
               <div className="hidden sm:block">
                 <h1 className="text-lg font-bold text-slate-800 leading-none tracking-tight">FuelProspector</h1>
                 <p className="text-[10px] text-indigo-500 mt-0.5 font-bold uppercase tracking-widest leading-none">Sales Discovery Engine</p>
@@ -306,12 +306,12 @@ const App: React.FC = () => {
                   type="button"
                   onClick={() => setSearchMode('deep')}
                   title="Searches every zip code in the city for more leads"
-                  className={`px-3 py-2.5 border-l border-slate-200 transition-all ${searchMode === 'deep' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+                  className={`px-3 py-2.5 border-l border-slate-200 transition-all ${searchMode === 'deep' ? 'bg-red-600 text-white' : 'bg-white text-slate-400 hover:text-slate-600'}`}
                 >
                   Deep Scan
                 </button>
               </div>
-              <button type="submit" disabled={state.isLoading} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-all whitespace-nowrap">
+              <button type="submit" disabled={state.isLoading} className="px-6 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-all whitespace-nowrap">
                 {state.isLoading ? 'Finding...' : 'Find Leads'}
               </button>
             </form>
@@ -341,7 +341,7 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-center mb-3">
                   <h2 className="font-black text-slate-800">Results ({state.leads.length})</h2>
                   {state.leads.length > 1 && (
-                    <button onClick={handleGenerateOptimizedRoute} disabled={isOptimizing} className="text-xs font-black text-white bg-indigo-500 hover:bg-indigo-600 px-3 py-1.5 rounded-lg transition-all">
+                    <button onClick={handleGenerateOptimizedRoute} disabled={isOptimizing} className="text-xs font-black text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-all">
                       {isOptimizing ? '🤖 Routing...' : '✨ Smart Route'}
                     </button>
                   )}
@@ -401,7 +401,7 @@ const App: React.FC = () => {
               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                 {state.isLoading ? (
                   <div className="flex flex-col items-center justify-center py-16 text-slate-400 px-6">
-                    <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
+                    <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin mb-4" />
                     <p className="text-xs font-medium text-center">{loadingStep}</p>
                     {discoveryProgress && discoveryProgress.phase === 'scanning' && discoveryProgress.total > 0 && (
                       <div className="w-full mt-4">
@@ -411,7 +411,7 @@ const App: React.FC = () => {
                         </div>
                         <div className="w-full bg-slate-100 rounded-full h-2">
                           <div
-                            className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                            className="bg-red-500 h-2 rounded-full transition-all duration-300"
                             style={{ width: `${Math.round((discoveryProgress.current / discoveryProgress.total) * 100)}%` }}
                           />
                         </div>
@@ -488,7 +488,7 @@ const App: React.FC = () => {
             <div className="flex gap-3">
               <button
                 onClick={() => window.print()}
-                className="bg-indigo-600 text-white px-10 py-3 rounded-xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
+                className="bg-red-600 text-white px-10 py-3 rounded-xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-red-700 transition-all active:scale-95"
               >
                 Save as PDF or Print
               </button>

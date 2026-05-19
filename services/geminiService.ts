@@ -14,7 +14,11 @@ const parseGroundedJson = <T>(text: string | undefined, fallback: T): T => {
   const firstBracket = cleaned.search(/[\[{]/);
   if (firstBracket > 0) cleaned = cleaned.slice(firstBracket);
   try {
-    return JSON.parse(cleaned) as T;
+    const parsed = JSON.parse(cleaned);
+    // If the caller expects an array but Gemini returned an object, return the fallback.
+    // This prevents "...result is not iterable" crashes when the model returns {} instead of [].
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
+    return parsed as T;
   } catch {
     return fallback;
   }
@@ -459,7 +463,7 @@ export const discoverLeadsEnhanced = async (
 
   // Phase 1: scan each zip code, 5 concurrent with a 1s gap between batches
   // to stay within Gemini rate limits on both free and paid tiers
-  const allRawSites: Array<{ name: string; address: string; brand?: string }> = [];
+  const allRawSites: RawSite[] = [];
   const concurrency = 5;
 
   for (let i = 0; i < zipCodes.length; i += concurrency) {
@@ -471,8 +475,8 @@ export const discoverLeadsEnhanced = async (
     );
 
     for (const result of batchResults) {
-      allRawSites.push(...result.sites);
-      allGroundingLinks.push(...result.groundingLinks);
+      if (Array.isArray(result.sites)) allRawSites.push(...result.sites);
+      if (Array.isArray(result.groundingLinks)) allGroundingLinks.push(...result.groundingLinks);
     }
 
     if (i + concurrency < zipCodes.length) {
