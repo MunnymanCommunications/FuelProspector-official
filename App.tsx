@@ -80,8 +80,7 @@ const App: React.FC = () => {
           }
         ));
       } else {
-        setLoadingStep('Phase 1: Discovering independent sites...');
-        setTimeout(() => setLoadingStep('Phase 2: Pinpointing map locations...'), 3000);
+        setLoadingStep('Discovering gas stations in ' + state.location + '...');
         ({ leads, groundingLinks } = await discoverLeads(state.location));
       }
 
