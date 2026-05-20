@@ -27,6 +27,13 @@ export interface EnrichmentProgress {
   currentName?: string;
 }
 
+export interface DiscoveryProgress {
+  phase: 'fetching-zips' | 'scanning' | 'geocoding';
+  current: number;
+  total: number;
+  currentZip?: string;
+}
+
 export interface ProspectingState {
   leads: GasStationLead[];
   isLoading: boolean;

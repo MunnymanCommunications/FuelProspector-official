@@ -1,7 +1,8 @@
 
 import React, { useState, useCallback } from 'react';
 import { ProspectingState, GasStationLead, EnrichmentProgress } from './types';
-import { discoverLeads, enrichLeads, enrichSingleLead, optimizeRouteOrder } from './services/geminiService';
+import { discoverLeads, discoverLeadsEnhanced, enrichLeads, enrichSingleLead, optimizeRouteOrder } from './services/geminiService';
+import { DiscoveryProgress } from './types';
 import MapView from './components/MapView';
 import LeadCard from './components/LeadCard';
 
@@ -26,6 +27,10 @@ const App: React.FC = () => {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [searchMode, setSearchMode] = useState<'standard' | 'deep'>('standard');
+  const [discoveryProgress, setDiscoveryProgress] = useState<DiscoveryProgress | null>(null);
+  const [filterUndo, setFilterUndo] = useState<{ leads: GasStationLead[]; route: GasStationLead[] } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const handlePinSubmit = (digit?: string) => {
     const newPin = digit !== undefined ? pin + digit : pin;
@@ -49,32 +54,52 @@ const App: React.FC = () => {
 
   const apiKeyMissing = !process.env.API_KEY;
 
-  // Search now only discovers and geocodes - no enrichment
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!state.location) return;
 
     setState(prev => ({ ...prev, isLoading: true, error: null, leads: [], route: [], enrichmentProgress: null }));
     setRouteStats(null);
-    setLoadingStep('Phase 1: Discovering independent sites...');
+    setDiscoveryProgress(null);
+    setSelectedIds(new Set());
 
     try {
-      setTimeout(() => setLoadingStep('Phase 2: Pinpointing map locations...'), 3000);
+      let leads, groundingLinks;
 
-      const { leads, groundingLinks } = await discoverLeads(state.location);
+      if (searchMode === 'deep') {
+        setLoadingStep(`Mapping service territory — retrieving zip codes for ${state.location}...`);
+        ({ leads, groundingLinks } = await discoverLeadsEnhanced(
+          state.location,
+          undefined,
+          (progress: DiscoveryProgress) => {
+            setDiscoveryProgress(progress);
+            if (progress.phase === 'fetching-zips') {
+              setLoadingStep(`Mapping service territory — retrieving zip codes for ${state.location}...`);
+            } else if (progress.phase === 'scanning') {
+              setLoadingStep(
+                progress.currentZip
+                  ? `Deploying AI Research Agent to zip code ${progress.currentZip}...`
+                  : `AI Research Agents scanning territory (${progress.current} of ${progress.total} zones complete)...`
+              );
+            } else if (progress.phase === 'geocoding') {
+              setLoadingStep(`Cross-referencing ${progress.total} discovered sites — building lead list...`);
+            }
+          }
+        ));
+      } else {
+        setLoadingStep(`AI Research Agent scanning ${state.location} for independent stations...`);
+        ({ leads, groundingLinks } = await discoverLeads(state.location));
+      }
 
-      setState(prev => ({
-        ...prev,
-        leads,
-        groundingLinks,
-        isLoading: false
-      }));
+      setState(prev => ({ ...prev, leads, groundingLinks, isLoading: false }));
+      setDiscoveryProgress(null);
     } catch (err: any) {
       setState(prev => ({
         ...prev,
         isLoading: false,
         error: err.message || 'The search encountered an error. Please try again.'
       }));
+      setDiscoveryProgress(null);
     }
   };
 
@@ -185,7 +210,53 @@ const App: React.FC = () => {
       leads: prev.leads.filter(l => l.id !== leadId),
       route: prev.route.filter(l => l.id !== leadId)
     }));
+    setSelectedIds(prev => { const next = new Set(prev); next.delete(leadId); return next; });
   }, []);
+
+  const handleToggleSelect = useCallback((leadId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(leadId) ? next.delete(leadId) : next.add(leadId);
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedIds(new Set(state.leads.map(l => l.id)));
+  }, [state.leads]);
+
+  const handleDeselectAll = useCallback(() => setSelectedIds(new Set()), []);
+
+  const handleDeleteSelected = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      leads: prev.leads.filter(l => !selectedIds.has(l.id)),
+      route: prev.route.filter(l => !selectedIds.has(l.id))
+    }));
+    setSelectedIds(new Set());
+  }, [selectedIds]);
+
+  const handleFilterLargeChains = useCallback(() => {
+    setState(prev => {
+      setFilterUndo({ leads: prev.leads, route: prev.route });
+      return {
+        ...prev,
+        leads: prev.leads.filter(l => !l.numLocations || l.numLocations <= 20),
+        // Route entries are pre-enrichment snapshots — look up numLocations from current leads
+        route: prev.route.filter(r => {
+          const lead = prev.leads.find(l => l.id === r.id);
+          const num = lead?.numLocations ?? r.numLocations;
+          return !num || num <= 20;
+        })
+      };
+    });
+  }, []);
+
+  const handleUndoFilter = useCallback(() => {
+    if (!filterUndo) return;
+    setState(prev => ({ ...prev, leads: filterUndo.leads, route: filterUndo.route }));
+    setFilterUndo(null);
+  }, [filterUndo]);
 
   const handleExportAll = () => {
     const csvContent = "data:text/csv;charset=utf-8,"
@@ -198,15 +269,21 @@ const App: React.FC = () => {
     link.click();
   };
 
-  const currentItinerary = state.route.length > 0 ? state.route : state.leads;
+  // Always resolve route entries from state.leads so enrichment that happened AFTER
+  // Smart Route was clicked is reflected in the print report and route card.
+  const currentItinerary = state.route.length > 0
+    ? state.route.map(r => state.leads.find(l => l.id === r.id)).filter((l): l is GasStationLead => !!l)
+    : state.leads;
   const unenrichedCount = state.leads.filter(l => !l.isEnriched).length;
   const enrichedCount = state.leads.filter(l => l.isEnriched).length;
+  // Show the chain filter button only once enriched leads with scale > 20 exist
+  const hasLargeChains = state.leads.some(l => l.isEnriched && l.numLocations && l.numLocations > 20);
 
   if (!isAuthorized) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-slate-900 overflow-hidden font-sans">
         <div className={`w-full max-w-md p-8 flex flex-col items-center transition-all duration-300 ${pinError ? 'translate-x-2 animate-shake' : ''}`}>
-          <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-2xl mb-8">F</div>
+          <div className="bg-red-600 w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-2xl mb-8">F</div>
           <h1 className="text-white text-2xl font-bold mb-2">FuelProspector AI</h1>
           <p className="text-slate-400 text-sm mb-12">Enter 4-digit access pin</p>
 
@@ -215,7 +292,7 @@ const App: React.FC = () => {
               <div
                 key={i}
                 className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
-                  pin.length > i ? 'bg-indigo-500 border-indigo-500 scale-125' : 'border-slate-700'
+                  pin.length > i ? 'bg-red-500 border-indigo-500 scale-125' : 'border-slate-700'
                 }`}
               />
             ))}
@@ -261,13 +338,13 @@ const App: React.FC = () => {
         <>
           <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm no-print">
             <div className="flex items-center gap-3">
-              <div className="bg-indigo-600 w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-200">F</div>
+              <div className="bg-red-600 w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-200">F</div>
               <div className="hidden sm:block">
                 <h1 className="text-lg font-bold text-slate-800 leading-none tracking-tight">FuelProspector</h1>
                 <p className="text-[10px] text-indigo-500 mt-0.5 font-bold uppercase tracking-widest leading-none">Sales Discovery Engine</p>
               </div>
             </div>
-            <form onSubmit={handleSearch} className="flex-1 max-w-2xl mx-6 flex gap-2">
+            <form onSubmit={handleSearch} className="flex-1 max-w-2xl mx-6 flex gap-2 items-center">
               <input
                 type="text"
                 placeholder="Enter City, State or Zip Code..."
@@ -275,7 +352,25 @@ const App: React.FC = () => {
                 value={state.location}
                 onChange={(e) => setState(prev => ({ ...prev, location: e.target.value }))}
               />
-              <button type="submit" disabled={state.isLoading} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-all whitespace-nowrap">
+              <div className="flex rounded-xl overflow-hidden border border-slate-200 text-xs font-bold shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('standard')}
+                  title="Single search pass"
+                  className={`px-3 py-2.5 transition-all ${searchMode === 'standard' ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+                >
+                  Standard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('deep')}
+                  title="Searches every zip code in the city for more leads"
+                  className={`px-3 py-2.5 border-l border-slate-200 transition-all ${searchMode === 'deep' ? 'bg-red-600 text-white' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+                >
+                  Deep Scan
+                </button>
+              </div>
+              <button type="submit" disabled={state.isLoading} className="px-6 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-all whitespace-nowrap">
                 {state.isLoading ? 'Finding...' : 'Find Leads'}
               </button>
             </form>
@@ -305,7 +400,7 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-center mb-3">
                   <h2 className="font-black text-slate-800">Results ({state.leads.length})</h2>
                   {state.leads.length > 1 && (
-                    <button onClick={handleGenerateOptimizedRoute} disabled={isOptimizing} className="text-xs font-black text-white bg-indigo-500 hover:bg-indigo-600 px-3 py-1.5 rounded-lg transition-all">
+                    <button onClick={handleGenerateOptimizedRoute} disabled={isOptimizing} className="text-xs font-black text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-all">
                       {isOptimizing ? '🤖 Routing...' : '✨ Smart Route'}
                     </button>
                   )}
@@ -350,7 +445,7 @@ const App: React.FC = () => {
 
                 {/* Enrichment status summary */}
                 {state.leads.length > 0 && (
-                  <div className="flex gap-2 mt-2 text-xs">
+                  <div className="flex gap-2 mt-2 text-xs flex-wrap">
                     <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full font-bold">
                       {enrichedCount} enriched
                     </span>
@@ -361,13 +456,83 @@ const App: React.FC = () => {
                     )}
                   </div>
                 )}
+
+                {/* Chain size filter — only shown once enriched leads with 20+ locations exist */}
+                {hasLargeChains && (
+                  <button
+                    onClick={handleFilterLargeChains}
+                    className="w-full mt-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 py-2 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                    title="Remove chains with 20+ locations — keeps small independents only"
+                  >
+                    🚫 Filter Chains (20+ locations)
+                  </button>
+                )}
+                {filterUndo && !hasLargeChains && (
+                  <button
+                    onClick={handleUndoFilter}
+                    className="w-full mt-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 py-2 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                    title="Restore the leads that were just filtered out"
+                  >
+                    ↩ Undo Filter
+                  </button>
+                )}
               </div>
+              {/* Multi-select action bar — visible when leads exist and not loading */}
+              {!state.isLoading && state.leads.length > 0 && (
+                <div className="px-4 pb-2 flex items-center gap-2">
+                  <button
+                    onClick={selectedIds.size === state.leads.length ? handleDeselectAll : handleSelectAll}
+                    className="text-[10px] font-bold text-slate-500 hover:text-slate-800 transition-colors"
+                  >
+                    {selectedIds.size === state.leads.length ? '☑ Deselect All' : '☐ Select All'}
+                  </button>
+                  {selectedIds.size > 0 && (
+                    <>
+                      <span className="text-slate-300 text-xs">|</span>
+                      <span className="text-[10px] text-slate-500 font-medium">{selectedIds.size} selected</span>
+                      <button
+                        onClick={handleDeleteSelected}
+                        className="ml-auto text-[10px] font-bold bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg transition-colors"
+                      >
+                        🗑️ Delete Selected
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                 {state.isLoading ? (
-                   <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                      <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
-                      <p className="text-xs font-medium">{loadingStep}</p>
-                   </div>
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400 px-6">
+                    <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin mb-4" />
+                    <p className="text-xs font-medium text-center">{loadingStep}</p>
+                    {discoveryProgress && discoveryProgress.phase === 'scanning' && discoveryProgress.total > 0 && (
+                      <div className="w-full mt-4">
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                          <span>{discoveryProgress.currentZip && `Zone ${discoveryProgress.currentZip}`}</span>
+                          <span>~{Math.max(1, Math.ceil(((discoveryProgress.total - discoveryProgress.current) / 5) * 1.2 / 60))} min left</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                          <div
+                            className="bg-red-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.round((discoveryProgress.current / discoveryProgress.total) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {discoveryProgress && discoveryProgress.phase === 'geocoding' && discoveryProgress.total > 0 && (
+                      <div className="w-full mt-4">
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                          <div
+                            className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.round((discoveryProgress.current / discoveryProgress.total) * 100)}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1.5 text-center">
+                          Geocoding {discoveryProgress.current} of {discoveryProgress.total} sites
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 ) : state.leads.length === 0 ? (
                   <div className="text-center py-20 text-slate-300 px-6">
                     <p className="text-xs font-bold uppercase tracking-widest mb-2">Search to begin</p>
@@ -382,6 +547,8 @@ const App: React.FC = () => {
                       onExport={() => {}}
                       onEnrich={() => handleEnrichSingle(lead.id)}
                       onDelete={() => handleDeleteLead(lead.id)}
+                      isSelected={selectedIds.has(lead.id)}
+                      onToggleSelect={() => handleToggleSelect(lead.id)}
                     />
                   ))
                 )}
@@ -389,7 +556,7 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex-1 relative bg-[#E2E8F0]">
-              <MapView leads={state.leads} route={state.route} onSelectLead={() => {}} onRouteCalculated={setRouteStats} />
+              <MapView leads={state.leads} route={state.route} onSelectLead={() => {}} onRouteCalculated={setRouteStats} mapsApiKey={process.env.MAPS_API} />
               {routeStats && (
                 <div className="absolute bottom-8 left-8 z-20 bg-white p-6 rounded-2xl shadow-2xl border border-indigo-50 min-w-[300px]">
                   <div className="flex justify-between mb-4">
@@ -425,7 +592,7 @@ const App: React.FC = () => {
             <div className="flex gap-3">
               <button
                 onClick={() => window.print()}
-                className="bg-indigo-600 text-white px-10 py-3 rounded-xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95"
+                className="bg-red-600 text-white px-10 py-3 rounded-xl font-black text-sm shadow-xl shadow-indigo-100 hover:bg-red-700 transition-all active:scale-95"
               >
                 Save as PDF or Print
               </button>
@@ -447,7 +614,7 @@ const App: React.FC = () => {
             </header>
 
             <div className="mb-10 h-[4in] border-2 border-slate-200 rounded-2xl overflow-hidden relative print:h-[3.5in]">
-              <MapView leads={state.leads} route={state.route} onSelectLead={() => {}} />
+              <MapView leads={state.leads} route={state.route} onSelectLead={() => {}} mapsApiKey={process.env.MAPS_API} />
             </div>
 
             <div className="space-y-8">

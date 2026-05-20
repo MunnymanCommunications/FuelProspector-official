@@ -8,7 +8,9 @@ const LeadCard: React.FC<{
   onExport: () => void;
   onEnrich?: () => void;
   onDelete?: () => void;
-}> = ({ lead, onSelect, onExport, onEnrich, onDelete }) => {
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
+}> = ({ lead, onSelect, onExport, onEnrich, onDelete, isSelected, onToggleSelect }) => {
   const copyToClipboard = () => {
     const text = `Company: ${lead.name}\nLocation: ${lead.address}\nOwner: ${lead.ownerName || 'N/A'}\nPhone: ${lead.contactInfo || 'N/A'}\nEmail: ${lead.email || 'N/A'}\nWebsite: ${lead.website || 'N/A'}`;
     navigator.clipboard.writeText(text);
@@ -25,14 +27,31 @@ const LeadCard: React.FC<{
 
   return (
     <div
-      className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer group no-print"
+      className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer group no-print ${
+        isSelected ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200'
+      }`}
       onClick={onSelect}
     >
       <div className="flex justify-between items-start mb-2">
-        <h3 className="font-bold text-slate-800 text-lg group-hover:text-indigo-600 transition-colors">
-          {lead.name}
-        </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {onToggleSelect && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+              className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                isSelected
+                  ? 'bg-red-600 border-red-600 text-white'
+                  : 'border-slate-300 hover:border-red-400'
+              }`}
+              aria-label={isSelected ? 'Deselect' : 'Select'}
+            >
+              {isSelected && <span className="text-[10px] font-black leading-none">✓</span>}
+            </button>
+          )}
+          <h3 className="font-bold text-slate-800 text-lg group-hover:text-red-600 transition-colors truncate">
+            {lead.name}
+          </h3>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
           {!lead.isEnriched && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-black tracking-widest bg-amber-100 text-amber-700">
               NOT ENRICHED
@@ -51,29 +70,29 @@ const LeadCard: React.FC<{
 
       <div className="space-y-2 text-sm text-slate-600">
         <div className="flex items-start gap-2">
-          <div className="mt-1 text-indigo-500">📍</div>
+          <div className="mt-1 text-red-500">📍</div>
           <p className="flex-1">{lead.address}</p>
         </div>
 
         {lead.isEnriched ? (
           <>
             <div className="flex items-center gap-2">
-              <div className="text-indigo-500">👤</div>
+              <div className="text-red-500">👤</div>
               <p className="flex-1"><span className="font-medium">Owner:</span> {lead.ownerName || 'Unknown'}</p>
             </div>
 
             <div className="flex items-center gap-2">
-              <div className="text-indigo-500">⛽</div>
+              <div className="text-red-500">⛽</div>
               <p className="flex-1"><span className="font-medium">Scale:</span> {lead.numLocations || 'N/A'} {lead.numLocations ? 'location(s)' : ''}</p>
             </div>
 
             {lead.contactInfo && (
               <div className="flex items-center gap-2">
-                <div className="text-indigo-500">📞</div>
+                <div className="text-red-500">📞</div>
                 <a
                   href={`tel:${lead.contactInfo.replace(/\D/g, '')}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="text-indigo-600 hover:underline flex-1"
+                  className="text-red-600 hover:underline flex-1"
                 >
                   {lead.contactInfo}
                 </a>
@@ -82,11 +101,11 @@ const LeadCard: React.FC<{
 
             {lead.email && (
               <div className="flex items-center gap-2">
-                <div className="text-indigo-500">✉️</div>
+                <div className="text-red-500">✉️</div>
                 <a
                   href={`mailto:${lead.email}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="text-indigo-600 hover:underline flex-1 truncate"
+                  className="text-red-600 hover:underline flex-1 truncate"
                 >
                   {lead.email}
                 </a>
@@ -95,13 +114,13 @@ const LeadCard: React.FC<{
 
             {lead.website && (
               <div className="flex items-center gap-2">
-                <div className="text-indigo-500">🌐</div>
+                <div className="text-red-500">🌐</div>
                 <a
                   href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="text-indigo-600 hover:underline flex-1 truncate"
+                  className="text-red-600 hover:underline flex-1 truncate"
                 >
                   View Website
                 </a>
@@ -120,7 +139,7 @@ const LeadCard: React.FC<{
           <button
             onClick={(e) => { e.stopPropagation(); onEnrich(); }}
             disabled={lead.isEnriching}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors"
+            className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors"
           >
             {lead.isEnriching ? (
               <>
