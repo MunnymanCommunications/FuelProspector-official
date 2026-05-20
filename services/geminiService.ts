@@ -42,13 +42,12 @@ export const discoverLeads = async (location: string, userCoords?: { lat: number
 
   console.log('[FuelProspector] Discovering sites with coordinates...');
   const discoveryPrompt = `
-    Find every independent gas station and small local chain operating in or near "${location}".
+    Find every gas station operating in or near "${location}".
 
     INSTRUCTIONS:
-    1. Identify brands like "Stop & Save", "Quick-Stop", and other non-national entities.
+    1. Include all brands — national chains, regional brands, local independents, and standalone stations.
     2. For every brand found, list EVERY location in this area with its address and GPS coordinates.
     3. Include "mom-and-pop" standalone stations.
-    4. Exclude major national chains (Shell, Exxon, BP, Chevron, Mobil, Marathon, Sunoco, Circle K, Speedway, Wawa, QuikTrip, Casey's, etc.).
 
     CRITICAL FIELD RULES:
     - "name": Business name ONLY as it appears on signage (e.g. "Wally's Corner Fuel"). NEVER a street address.
@@ -388,12 +387,11 @@ const discoverSitesForZip = async (
   cityName: string
 ): Promise<{ sites: RawSite[], groundingLinks: GroundingLink[] }> => {
   const prompt = `
-    Find every independent gas station and small local chain physically located in zip code ${zip} (${cityName}).
+    Find every gas station physically located in zip code ${zip} (${cityName}).
 
     INSTRUCTIONS:
-    1. Include local/regional brands, small chains, and standalone "mom-and-pop" stations.
+    1. Include all brands — national chains, regional brands, local independents, and standalone stations.
     2. List EVERY location within or immediately adjacent to zip code ${zip} with GPS coordinates.
-    3. Exclude major national chains (Shell, Exxon, BP, Chevron, Mobil, Marathon, Sunoco, Circle K, Speedway, Wawa, QuikTrip, Casey's, etc.).
 
     CRITICAL FIELD RULES:
     - "name": Business name ONLY (e.g. "Wally's Gas"). NEVER a street address.
